@@ -38,7 +38,12 @@ class Providers:
 
 def build_providers(settings: Settings, repo: Repo, store: AssetStore) -> Providers:
     if settings.provider_mode == "fake":
-        return fake_providers(store, settings.x264_preset)
+        providers = fake_providers(store, settings.x264_preset)
+        if settings.renderer == "remotion":  # exercise the real render workers with fake inputs
+            from .render import RemotionRenderer
+
+            providers.renderer = RemotionRenderer(repo)
+        return providers
 
     from .fal import FalVideo
     from .music import EpidemicMusic, LibraryMusic

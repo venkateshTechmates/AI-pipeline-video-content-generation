@@ -175,6 +175,10 @@ CLIPFORGE_TEST_DATABASE_URL=postgresql://... pytest tests/test_postgres.py
 ruff check clipforge tests
 ```
 
+To check the Python ↔ Remotion contract, run the Node worker from `render/` against the same database
+and asset root. Then run a fake-mode pipeline with `RENDERER=remotion`: the graph enqueues `render_jobs`,
+the worker renders all three aspects, and QA runs on the Remotion output.
+
 The end-to-end tests cover:
 - approve → publish to 5 platforms → metrics at +24 h
 - regenerate music, edit the script, reject
