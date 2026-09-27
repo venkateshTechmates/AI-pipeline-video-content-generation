@@ -172,8 +172,8 @@ class Brand(BaseModel):
     name: str
     kit: BrandKit = Field(default_factory=BrandKit)
     tier: Tier = Tier.economy
-    budget_per_run: float = 3.0
-    daily_budget: float = 30.0
+    budget_per_run: float = 25.0
+    daily_budget: float = 250.0
     trust_score: int = 0  # consecutive human approvals
     auto_approve_after: int = 10  # N in "trust >= N"
     calendar: PostingCalendar = Field(default_factory=PostingCalendar)
@@ -401,7 +401,7 @@ class Run(BaseModel):
     brief: str | None = None
     status: RunStatus = RunStatus.queued
     tier: Tier = Tier.economy
-    budget: float = 3.0
+    budget: float = 25.0
     cost_total: float = 0.0
     checkpoint_id: str | None = None
     schedule: datetime | None = None

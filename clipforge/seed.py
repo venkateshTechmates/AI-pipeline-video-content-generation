@@ -9,8 +9,8 @@ DEMO_BRAND_ID = "00000000-0000-4000-8000-000000000001"
 
 def demo_brand(org_id: str = "default") -> Brand:
     return Brand(
-        id=DEMO_BRAND_ID, org_id=org_id, name="Daily Habits Lab", tier=Tier.economy, budget_per_run=3.0,
-        daily_budget=30.0, auto_approve_after=10,
+        id=DEMO_BRAND_ID, org_id=org_id, name="Daily Habits Lab", tier=Tier.economy, budget_per_run=25.0,
+        daily_budget=250.0, auto_approve_after=10,
         kit=BrandKit(
             niche="productivity and healthy habits", audience="busy professionals 25-40",
             tone="warm, punchy, practical", hashtags=["habits", "productivity"],

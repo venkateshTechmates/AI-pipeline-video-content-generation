@@ -211,7 +211,7 @@ async def test_all_platforms_with_account_options(app):
 
 
 async def test_edit_shot_prompts_regenerates_clips(app):
-    run = await new_run(app, budget_per_run=10.0)  # new clips are paid again; the $3 default would abort
+    run = await new_run(app)  # new clips are paid again; fits the default $25 budget
     await execute(app, run)
     calls = sum(p.calls for p in app.deps.providers.video_chain(Tier.economy) if isinstance(p, FakeVideo))
     shots = ["A caped hero flies over a stormy city", "Sparks crawl up a nurse's arms",
@@ -222,3 +222,12 @@ async def test_edit_shot_prompts_regenerates_clips(app):
     assert [s["prompt"] for s in st["shot_list"]["shots"]] == [shots[0], shots[1], shots[2]["prompt"]]
     assert {t["shot_index"] for t in st["timeline"]} == {0, 1, 2}
     assert sum(p.calls for p in app.deps.providers.video_chain(Tier.economy) if isinstance(p, FakeVideo)) > calls
+
+
+async def test_premium_veo_runs_within_default_budget(app):
+    run = await new_run(app, tier=Tier.premium)  # default $25/run fits Veo 3.1 std (~$0.40/s)
+    r = await execute(app, run)
+    assert r.status == RunStatus.awaiting_approval, r.error
+    assert r.tier == Tier.premium and 3.0 < r.cost_total <= 25.0
+    state = await app.repo.get_run_state(run.id)
+    assert {c["provider"] for c in state["clips"]} == {"fake:veo"}
