@@ -48,6 +48,13 @@ PRICES: dict[str, float] = {
     "creatomate:render": 0.25,  # per render
     "upload_post:post": 0.0,
     "ayrshare:post": 0.0,
+    # offline fakes bill like the real thing so demos show realistic cost ledgers
+    "fake:kling": 0.084,
+    "fake:seedance": 0.06,
+    "fake:veo": 0.40,
+    "fake:tts": 0.18,
+    "fake:music": 0.0,
+    "fake:publish": 0.0,
     "fake": 0.0,
 }
 

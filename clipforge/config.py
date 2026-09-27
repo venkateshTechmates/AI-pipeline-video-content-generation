@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     fal_key: str | None = None
     fal_webhook_secret: str | None = None
     replicate_api_token: str | None = None
+    replicate_webhook_secret: str | None = None
     google_project: str | None = None
     google_location: str = "us-central1"
     google_api_key: str | None = None  # AI Studio (Gemini API) key for Veo
@@ -46,9 +47,8 @@ class Settings(BaseSettings):
     music_library_dir: Path | None = None  # local licensed library with manifest.json
     creatomate_api_key: str | None = None
     upload_post_api_key: str | None = None
-    upload_post_webhook_secret: str | None = None
     ayrshare_api_key: str | None = None
-    ayrshare_webhook_secret: str | None = None
+    publisher_webhook_secret: str | None = None  # HMAC secret configured on the publisher webhook
 
     # ---- rendering
     renderer: str = "ffmpeg"  # ffmpeg | remotion | creatomate
@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     # ---- security
     cron_secret: str | None = None
     auth_required: bool = False  # require Supabase JWT on API
+    api_token: str | None = None  # static service token (MCP server / CLI) accepted as a Bearer token
+    embedded_worker: bool = True  # run the graph worker inside the API process (single-container mode)
+    worker_concurrency: int = 2
+    calendar_lead_hours: float = 2.0  # create calendar runs this long before the slot
     alert_webhook_url: str | None = None  # Slack-compatible webhook for budget / DLQ alerts
 
     # ---- observability

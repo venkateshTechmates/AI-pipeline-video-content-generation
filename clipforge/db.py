@@ -88,6 +88,8 @@ class Repo(Protocol):
     ) -> None: ...
     async def expiring_credentials(self, before: datetime) -> list[tuple[str, str]]: ...
     async def stale_runs(self, older_than: datetime) -> list[Run]: ...
+    async def user_org_ids(self, user_id: str) -> list[str]: ...
+    async def find_post_by_external(self, external_id: str) -> PostRecord | None: ...
     async def claim_runs(self, worker: str, limit: int = 1) -> list[Run]:
         """Atomically move queued / resume_requested runs to running for this worker."""
         ...
@@ -111,6 +113,7 @@ class MemoryRepo:
         self.dead_letters: list[dict[str, Any]] = []
         self.webhooks: set[str] = set()
         self.credentials: dict[tuple[str, str], tuple[str, datetime | None]] = {}
+        self.org_members: dict[str, set[str]] = defaultdict(set)
 
     async def get_brand(self, brand_id: str) -> Brand:
         try:
@@ -270,6 +273,15 @@ class MemoryRepo:
 
     async def expiring_credentials(self, before: datetime) -> list[tuple[str, str]]:
         return [k for k, (_, exp) in self.credentials.items() if exp and exp < before]
+
+    async def user_org_ids(self, user_id: str) -> list[str]:
+        return [org for org, users in self.org_members.items() if user_id in users]
+
+    async def find_post_by_external(self, external_id: str) -> PostRecord | None:
+        for p in self.posts.values():
+            if p.external_id == external_id or p.metadata.get("ayrshare_id") == external_id:
+                return p.model_copy(deep=True)
+        return None
 
     async def claim_runs(self, worker: str, limit: int = 1) -> list[Run]:
         out = []
@@ -640,13 +652,22 @@ class PostgresRepo:
             "select brand_id, provider from provider_credentials where expires_at < %s", before)
         return [(str(r["brand_id"]), r["provider"]) for r in rows]
 
+    async def user_org_ids(self, user_id: str) -> list[str]:
+        rows = await self._all("select org_id from org_members where user_id = %s", user_id)
+        return [r["org_id"] for r in rows]
+
+    async def find_post_by_external(self, external_id: str) -> PostRecord | None:
+        r = await self._one(
+            "select * from posts where external_id = %s or metadata_json->>'ayrshare_id' = %s limit 1",
+            external_id, external_id)
+        return self._post(r) if r else None
+
     async def claim_runs(self, worker: str, limit: int = 1) -> list[Run]:
         rows = await self._all(
             """update runs set status = 'running', locked_by = %s, locked_at = now()
                where id in (select id from runs where status in ('queued', 'resume_requested')
                             order by created_at for update skip locked limit %s)
                returning *""", worker, limit)
-        # the pre-update status is needed to know whether to start or resume; pending_decision tells us
         return [self._run(r) for r in rows]
 
     async def stale_runs(self, older_than: datetime) -> list[Run]:

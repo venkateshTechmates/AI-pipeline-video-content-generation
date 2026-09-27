@@ -307,7 +307,7 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
             image_url=store.url(ref, 86400) if ref else None,
             image_path=store.local_path(ref) if ref else None,
             seed=(int(cache[:6], 16) + nonce) % 2**31,
-            webhook_url=f"{settings.public_api_url.rstrip('/')}/webhooks/fal",
+            webhook_url=webhook_url(settings, "fal"),
         )
 
         async def call(p):
@@ -605,6 +605,14 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
         "collect_shots": collect_shots, "music": music, "render": render, "qa": qa, "approve": approve,
         "metadata": metadata, "publish": publish, "finalize": finalize,
     }
+
+
+def webhook_url(settings: Settings, source: str) -> str:
+    """Provider callback URL; fal gets a shared-secret token on top of its ED25519 signature."""
+    url = f"{settings.public_api_url.rstrip('/')}/webhooks/{source}"
+    if source == "fal" and settings.fal_webhook_secret:
+        return f"{url}?token={settings.fal_webhook_secret}"
+    return url
 
 
 def auto_approvable(brand: Brand, report: QAReport) -> bool:
