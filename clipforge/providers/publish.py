@@ -11,21 +11,9 @@ from ..ratelimit import bucket
 from ..retry import PermanentError
 from .base import PublishRequest, PublishResult
 
-UPLOAD_POST_PLATFORM = {
-    Platform.youtube: "youtube",
-    Platform.instagram: "instagram",
-    Platform.tiktok: "tiktok",
-    Platform.linkedin: "linkedin",
-    Platform.x: "x",
-}
+UPLOAD_POST_PLATFORM = {p: p.value for p in Platform}  # Upload-Post uses our names (x, facebook, threads, ...)
 
-AYRSHARE_PLATFORM = {
-    Platform.youtube: "youtube",
-    Platform.instagram: "instagram",
-    Platform.tiktok: "tiktok",
-    Platform.linkedin: "linkedin",
-    Platform.x: "twitter",
-}
+AYRSHARE_PLATFORM = {p: p.value for p in Platform} | {Platform.x: "twitter"}
 
 
 def _caption(req: PublishRequest) -> str:
@@ -62,6 +50,17 @@ class UploadPostPublisher:
             data["containsSyntheticMedia"] = "true" if req.metadata.ai_disclosure else "false"
         if req.platform == Platform.instagram:
             data["media_type"] = "REELS"
+        if req.platform == Platform.facebook:
+            if not req.options.get("page_id"):
+                raise PermanentError("facebook needs platform_options.facebook.page_id in the brand kit")
+            data["facebook_page_id"] = req.options["page_id"]
+            data["facebook_media_type"] = "REELS"
+        if req.platform == Platform.pinterest:
+            data["pinterest_board_id"] = req.options["board_id"]
+            data["title"] = req.metadata.title
+        if req.platform == Platform.reddit:
+            data["subreddit"] = req.options["subreddit"]
+            data["title"] = req.metadata.title
         if req.scheduled_at:
             data["scheduled_date"] = _iso(req.scheduled_at) or ""
         files = None
@@ -131,6 +130,13 @@ class AyrsharePublisher:
         if req.platform == Platform.tiktok:
             body["tikTokOptions"] = {"isAIGenerated": req.metadata.ai_disclosure,
                                      **({"thumbNailOffset": int(req.metadata.thumbnail_time * 1000)})}
+        if req.platform == Platform.facebook:
+            body["faceBookOptions"] = {"reels": True, "title": req.metadata.title[:255]}
+        if req.platform == Platform.pinterest:
+            body["pinterestOptions"] = {"boardId": req.options["board_id"], "title": req.metadata.title[:100],
+                                        **({"thumbNail": req.thumbnail_url} if req.thumbnail_url else {})}
+        if req.platform == Platform.reddit:
+            body["redditOptions"] = {"title": req.metadata.title[:300], "subreddit": req.options["subreddit"]}
         headers = {"Profile-Key": req.profile_key} if req.profile_key else {}
         await bucket("ayrshare").acquire()
         r = await self.client.post(f"{self.BASE}/post", json=body, headers=headers)

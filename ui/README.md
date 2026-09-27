@@ -18,7 +18,7 @@ daily budget" pill.
 | `/runs` | **Runs** — status-group chips with counts, search, brand filter, auto-refresh (4 s while runs are active). Rows open the detail page. |
 | `/runs/new` | **New run** — brand (with tier/budget), brief, tier cards with a 40 s cost estimate vs the run budget, platform toggles, calendar-slot or explicit schedule. |
 | `/costs`, `/brands/:id/costs` | **Costs** — KPI tiles (total, runs, avg per run vs the $3 target, avg per day), daily spend stacked by stage or provider (hover tooltips, table view), by provider / stage. Ranges 7/14/30/90 d or custom (UTC days). |
-| `/brands`, `/brands/:id` | **Brands** — kit summary: trust score vs auto-approve threshold, budgets, colour swatches, caption-style preview, voice/tone, banned topics, negative prompts, AI-disclosure per platform, weekly posting calendar. |
+| `/brands`, `/brands/:id` | **Brands** — kit summary: trust score vs auto-approve threshold, budgets, colour swatches, caption-style preview, voice/tone, banned topics, negative prompts, AI-disclosure per platform, weekly posting calendar. **Platforms & publishing** editor: turn each of the 10 platforms on/off, fill account targets (Facebook page, Pinterest board, subreddit), per-platform AI label, pick Upload-Post or Ayrshare and store the publisher profile key (write-only). Saves via `PATCH /brands/{id}`. |
 
 ### Keyboard
 
@@ -42,6 +42,7 @@ the same assets (hence the 0:06 durations in the players).
 | ![Runs](docs/screenshots/runs-desktop.png) | ![New run](docs/screenshots/new-run-desktop.png) |
 | ![Costs](docs/screenshots/costs-desktop.png) | ![Brands](docs/screenshots/brands-desktop.png) |
 | ![Shortcut sheet](docs/screenshots/shortcuts-desktop.png) | ![Run detail, light](docs/screenshots/run-preview-desktop-light.png) |
+| ![Platforms & publishing](docs/screenshots/brand-platforms-desktop.png) | |
 
 Mobile (390 × 844):
 

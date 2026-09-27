@@ -24,7 +24,22 @@ PLATFORM_LIMITS: dict[Platform, PlatformLimits] = {
     Platform.tiktok: PlatformLimits(100, 2200, 20, 600, Aspect.vertical, True),
     Platform.linkedin: PlatformLimits(150, 3000, 10, 600, Aspect.square, False),
     Platform.x: PlatformLimits(100, 280, 3, 140, Aspect.vertical, False),
+    Platform.facebook: PlatformLimits(255, 2200, 10, 90, Aspect.vertical, True),
+    Platform.threads: PlatformLimits(100, 500, 1, 300, Aspect.vertical, True),
+    Platform.pinterest: PlatformLimits(100, 500, 10, 300, Aspect.vertical, False),
+    Platform.bluesky: PlatformLimits(100, 300, 3, 180, Aspect.vertical, False),
+    Platform.reddit: PlatformLimits(300, 10000, 0, 900, Aspect.vertical, False),
 }
+
+# Account targets a platform needs before it can be posted to (from BrandKit.platform_options).
+REQUIRED_OPTIONS: dict[Platform, tuple[str, ...]] = {
+    Platform.pinterest: ("board_id",),
+    Platform.reddit: ("subreddit",),
+}
+
+
+def missing_options(platform: Platform, options: dict[str, str]) -> list[str]:
+    return [k for k in REQUIRED_OPTIONS.get(platform, ()) if not options.get(k)]
 
 
 def clean_hashtag(tag: str) -> str:

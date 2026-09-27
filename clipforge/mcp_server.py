@@ -49,7 +49,7 @@ async def create_run(brand_id: str, brief: str | None = None, tier: Literal["eco
                      schedule: str | None = None, platforms: list[str] | None = None) -> dict[str, Any]:
     """Start a video run for a brand. `brief` is the topic (optional: the brand's niche is used).
     `schedule` is an ISO-8601 publish time (optional: next brand calendar slot).
-    `platforms` subset of youtube, instagram, tiktok, linkedin, x."""
+    `platforms` subset of youtube, instagram, tiktok, linkedin, x, facebook, threads, pinterest, bluesky, reddit."""
     body = {k: v for k, v in {"brand_id": brand_id, "brief": brief, "tier": tier, "schedule": schedule,
                               "platforms": platforms}.items() if v is not None}
     return await _req("POST", "/runs", json=body)

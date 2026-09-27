@@ -3,6 +3,7 @@ import type {
   ApprovalDecision,
   Brand,
   BrandCosts,
+  BrandPatch,
   QueueItem,
   Run,
   RunCreateBody,
@@ -88,6 +89,12 @@ export const api = {
   brands: () => request<{ items: Brand[] }>("GET", "/brands"),
 
   brand: (id: string) => request<Brand>("GET", `/brands/${encodeURIComponent(id)}`),
+
+  patchBrand: (id: string, patch: BrandPatch) =>
+    request<Brand>("PATCH", `/brands/${encodeURIComponent(id)}`, { body: patch }),
+
+  putCredential: (id: string, provider: Brand["publisher"], token: string) =>
+    request<void>("POST", `/brands/${encodeURIComponent(id)}/credentials`, { body: { provider, token } }),
 
   brandCosts: (id: string, range: { from?: string; to?: string } = {}) =>
     request<BrandCosts>("GET", `/brands/${encodeURIComponent(id)}/costs`, { query: range }),

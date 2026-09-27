@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .models import Brand, BrandKit, CalendarSlot, CaptionStyle, PostingCalendar, Tier
+from .models import DEFAULT_PLATFORMS, Brand, BrandKit, CalendarSlot, CaptionStyle, Platform, PostingCalendar, Tier
 
 DEMO_BRAND_ID = "00000000-0000-4000-8000-000000000001"
 
@@ -16,6 +16,9 @@ def demo_brand(org_id: str = "default") -> Brand:
             tone="warm, punchy, practical", hashtags=["habits", "productivity"],
             banned_topics=["politics", "gambling", "medical diagnosis"],
             caption_style=CaptionStyle(highlight_color="#22D3EE"), music_moods=["upbeat"],
+            platforms=[*DEFAULT_PLATFORMS, Platform.threads, Platform.pinterest, Platform.bluesky],
+            platform_options={Platform.facebook: {"page_id": "1029384756"},
+                              Platform.pinterest: {"board_id": "daily-habits"}},
         ),
         calendar=PostingCalendar(timezone="America/New_York",
                                  slots=[CalendarSlot(weekday=d, time="18:00") for d in range(5)]),

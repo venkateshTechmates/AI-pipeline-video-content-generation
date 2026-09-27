@@ -47,7 +47,7 @@ from ..models import (
     VoiceOver,
     utcnow,
 )
-from ..platforms import PLATFORM_LIMITS, fit_metadata
+from ..platforms import PLATFORM_LIMITS, fit_metadata, missing_options
 from ..providers.base import PublishRequest, VideoRequest, VideoResult
 from ..providers.registry import Providers
 from ..qa import run_qa
@@ -579,6 +579,15 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
             if done and done.external_id and done.status != "failed":
                 posts.append(done.model_dump(mode="json"))
                 continue
+            options = brand.kit.platform_options.get(meta.platform, {})
+            missing = missing_options(meta.platform, options)
+            if missing:  # not connected for this brand: record why, keep publishing the others
+                err = f"missing brand kit platform_options.{meta.platform.value}: {', '.join(missing)}"
+                failures.append(f"{meta.platform.value}: {err}")
+                rec = PostRecord(run_id=run.id, platform=meta.platform, status="failed",
+                                 metadata={"error": err, **meta.model_dump(mode="json")})
+                posts.append((await repo.upsert_post(rec)).model_dump(mode="json"))
+                continue
             when = await _pick_slot(deps, brand, meta.platform, run.schedule, now)
             r = renders.get(meta.aspect.value) or renders[Aspect.vertical.value]
             req = PublishRequest(
@@ -586,7 +595,7 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
                 video_url=store.url(r["path"], 7 * 86400), video_path=store.local_path(r["path"]),
                 metadata=meta, thumbnail_url=store.url(meta.thumbnail_path, 7 * 86400) if meta.thumbnail_path else None,
                 scheduled_at=when if when and when > now + timedelta(minutes=5) else None,
-                profile_key=profile_key,
+                profile_key=profile_key, options=options,
             )
             try:
                 res = await retry_async(lambda req=req: publisher.publish(req), attempts=3,

@@ -45,7 +45,7 @@ create table if not exists runs (
   cost_total numeric(10, 4) not null default 0,
   checkpoint_id text,
   schedule timestamptz,
-  platforms text[] not null default array['youtube', 'instagram', 'tiktok', 'linkedin', 'x'],
+  platforms text[] not null default array['youtube', 'instagram', 'tiktok', 'linkedin', 'x', 'facebook'],
   error text,
   attempts int not null default 0,
   pending_decision jsonb,

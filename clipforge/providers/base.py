@@ -116,6 +116,7 @@ class PublishRequest(BaseModel):
     thumbnail_url: str | None = None
     scheduled_at: datetime | None = None
     profile_key: str | None = None  # per-brand token / profile (Ayrshare profile key, Upload-Post user)
+    options: dict[str, str] = Field(default_factory=dict)  # platform account targets (page_id, board_id, ...)
 
 
 class PublishResult(BaseModel):

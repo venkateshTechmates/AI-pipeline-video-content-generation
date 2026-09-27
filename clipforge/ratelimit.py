@@ -65,6 +65,11 @@ PLATFORM_DAILY_CAP: dict[Platform, int] = {
     Platform.youtube: 50,
     Platform.linkedin: 50,
     Platform.x: 100,
+    Platform.facebook: 25,
+    Platform.threads: 25,
+    Platform.pinterest: 25,
+    Platform.bluesky: 50,
+    Platform.reddit: 5,
 }
 
 

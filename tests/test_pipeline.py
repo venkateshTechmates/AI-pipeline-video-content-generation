@@ -5,6 +5,7 @@ from datetime import timedelta
 import pytest
 
 from clipforge.models import (
+    DEFAULT_PLATFORMS,
     ApprovalDecision,
     Brand,
     CalendarSlot,
@@ -58,7 +59,7 @@ async def test_full_run_approve_publish(app):
     r = await decide(app, run.id, decision="approve")
     assert r.status == RunStatus.published, r.error
     posts = await app.repo.list_posts(run.id)
-    assert {p.platform for p in posts} == set(Platform)
+    assert {p.platform for p in posts} == set(DEFAULT_PLATFORMS)
     assert all(p.external_id and p.status == "published" for p in posts)
     li = next(p for p in posts if p.platform == Platform.linkedin)
     assert li.metadata["aspect"] == "1:1"
@@ -77,7 +78,7 @@ async def test_full_run_approve_publish(app):
     for p in posts:
         p.published_at = utcnow() - timedelta(hours=25)
         await app.repo.upsert_post(p)
-    assert (await collect_due_metrics(app))["collected"] == 5
+    assert (await collect_due_metrics(app))["collected"] == len(DEFAULT_PLATFORMS)
     assert (await collect_due_metrics(app))["collected"] == 0
 
 
@@ -189,3 +190,21 @@ async def test_banned_topic_blocks_ideation(app, banned):
     await app.repo.create_run(run)
     r = await execute(app, run)
     assert r.status == RunStatus.failed and "no novel hook" in r.error
+
+
+async def test_all_platforms_with_account_options(app):
+    """Opt into every platform; reddit has no subreddit configured -> that post fails, the rest go out."""
+    run = await new_run(app, trust_score=99)
+    brand = await app.repo.get_brand(run.brand_id)
+    brand.kit.platforms = list(Platform)
+    brand.kit.platform_options = {Platform.pinterest: {"board_id": "b1"}, Platform.facebook: {"page_id": "p1"}}
+    await app.repo.upsert_brand(brand)
+    await app.repo.update_run(run.id, platforms=list(Platform))
+    r = await execute(app, await app.repo.get_run(run.id))
+    assert r.status == RunStatus.published, r.error
+    posts = {p.platform: p for p in await app.repo.list_posts(run.id)}
+    assert set(posts) == set(Platform)
+    assert posts[Platform.reddit].status == "failed" and "subreddit" in posts[Platform.reddit].metadata["error"]
+    assert all(p.status == "published" for k, p in posts.items() if k != Platform.reddit)
+    assert posts[Platform.threads].metadata["hashtags"].__len__() <= 1
+    assert len(posts[Platform.bluesky].metadata["description"]) <= 300

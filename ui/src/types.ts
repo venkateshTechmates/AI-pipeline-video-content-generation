@@ -2,8 +2,19 @@
 // Datetimes arrive as ISO strings.
 
 export type Tier = "economy" | "premium";
-export type Platform = "youtube" | "instagram" | "tiktok" | "linkedin" | "x";
-export const ALL_PLATFORMS: Platform[] = ["youtube", "instagram", "tiktok", "linkedin", "x"];
+export type Platform =
+  | "youtube" | "instagram" | "tiktok" | "linkedin" | "x"
+  | "facebook" | "threads" | "pinterest" | "bluesky" | "reddit";
+export const ALL_PLATFORMS: Platform[] = [
+  "youtube", "instagram", "tiktok", "facebook", "linkedin", "x", "threads", "pinterest", "bluesky", "reddit",
+];
+/** Platforms whose policy requires labelling realistic AI content; always labelled (mirrors platforms.py). */
+export const DISCLOSURE_REQUIRED: Platform[] = ["youtube", "instagram", "tiktok", "facebook", "threads"];
+/** Account targets a platform needs in the brand kit before it can be posted to (mirrors platforms.py). */
+export const REQUIRED_PLATFORM_OPTIONS: Partial<Record<Platform, string[]>> = {
+  pinterest: ["board_id"],
+  reddit: ["subreddit"],
+};
 export type AspectRatio = "9:16" | "1:1" | "16:9";
 export const ASPECTS: AspectRatio[] = ["9:16", "1:1", "16:9"];
 
@@ -228,6 +239,7 @@ export interface BrandKit {
   music_moods: string[];
   disclosure: { default: boolean; per_platform: Partial<Record<Platform, boolean>> };
   platforms: Platform[];
+  platform_options?: Partial<Record<Platform, Record<string, string>>>;
   hashtags: string[];
   consistency: "reference" | "first_shot" | "none";
 }
@@ -244,6 +256,20 @@ export interface Brand {
   auto_approve_after: number;
   calendar: { timezone: string; slots: CalendarSlot[] };
   publisher: "upload_post" | "ayrshare";
+  /** GET /brands/{id} only: whether a publisher profile key is stored (never the key itself). */
+  credentials?: Partial<Record<"upload_post" | "ayrshare", boolean>>;
+  /** GET/PATCH /brands/{id} only: enabled platforms that are missing required account fields. */
+  warnings?: string[];
+}
+
+export interface BrandPatch {
+  name?: string;
+  tier?: Tier;
+  budget_per_run?: number;
+  daily_budget?: number;
+  auto_approve_after?: number;
+  publisher?: Brand["publisher"];
+  kit?: Partial<BrandKit>;
 }
 
 // ---------------------------------------------------------------- API shapes

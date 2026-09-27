@@ -138,3 +138,22 @@ async def test_cron_calendar_creates_runs_once(client, cf):
     assert runs[0].schedule.strftime("%H:%M") == slot.strftime("%H:%M")
     assert client.post("/cron/nope", headers=h).status_code == 404
     assert client.post("/cron/recover", headers=h).json() == {"requeued": 0}
+
+
+async def test_patch_brand_platforms_and_credentials(client, cf):
+    b = demo_brand()
+    await cf.repo.upsert_brand(b)
+    r = client.patch(f"/brands/{b.id}", json={"kit": {"platforms": ["youtube", "reddit", "pinterest"],
+                                                      "platform_options": {"pinterest": {"board_id": "b1"}}},
+                                              "publisher": "ayrshare", "budget_per_run": 4})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["kit"]["platforms"] == ["youtube", "reddit", "pinterest"] and d["publisher"] == "ayrshare"
+    assert d["warnings"] == ["reddit: needs subreddit"]
+    assert d["kit"]["niche"] == b.kit.niche  # untouched kit fields survive
+    assert d["credentials"] == {"upload_post": False, "ayrshare": False}
+    assert client.patch(f"/brands/{b.id}", json={"kit": {"platforms": ["myspace"]}}).status_code == 422
+    assert client.post(f"/brands/{b.id}/credentials", json={"provider": "ayrshare", "token": "pk"}).status_code == 204
+    d = client.get(f"/brands/{b.id}").json()
+    assert d["credentials"]["ayrshare"] is True and "pk" not in json.dumps(d)
+    assert (await cf.repo.get_brand(b.id)).budget_per_run == 4

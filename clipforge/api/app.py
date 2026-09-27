@@ -9,18 +9,19 @@ import logging
 from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, date, datetime, timedelta
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
 
 from ..config import Settings, get_settings
 from ..db import NotFound
-from ..models import ApprovalDecision, Brand, Run, RunCreate, RunStatus
+from ..models import ApprovalDecision, Brand, BrandKit, PostingCalendar, Run, RunCreate, RunStatus, Tier
 from ..orchestrator import App, create_app_state, worker_loop
+from ..platforms import missing_options
 from ..providers.jobs import get_waiter
 from ..storage import LocalStore
 from .auth import Principal, brand_ids_for, principal, require_brand
@@ -30,6 +31,23 @@ log = logging.getLogger(__name__)
 TERMINAL = {RunStatus.published, RunStatus.scheduled, RunStatus.failed, RunStatus.aborted, RunStatus.dead_letter}
 
 Auth = Annotated[Principal, Depends(principal)]
+
+
+class CredentialIn(BaseModel):
+    provider: str
+    token: str
+    expires_at: datetime | None = None
+
+
+class BrandPatch(BaseModel):
+    name: str | None = None
+    tier: Tier | None = None
+    budget_per_run: float | None = Field(None, gt=0)
+    daily_budget: float | None = Field(None, gt=0)
+    auto_approve_after: int | None = Field(None, ge=1)
+    publisher: Literal["upload_post", "ayrshare"] | None = None
+    calendar: PostingCalendar | None = None
+    kit: dict[str, Any] | None = None  # top-level kit fields to replace (e.g. platforms, platform_options)
 
 
 def create_app(settings: Settings | None = None, app_state: App | None = None,
@@ -95,18 +113,43 @@ def create_app(settings: Settings | None = None, app_state: App | None = None,
         await cf(request).repo.upsert_brand(brand)
         return brand.model_dump(mode="json")
 
+    async def brand_view(request: Request, brand: Brand) -> dict[str, Any]:
+        repo = cf(request).repo
+        warnings = [f"{pl.value}: needs {', '.join(m)}" for pl in brand.kit.platforms
+                    if (m := missing_options(pl, brand.kit.platform_options.get(pl, {})))]
+        return {
+            **brand.model_dump(mode="json"),
+            # whether a publisher profile key is stored (the key itself is never returned)
+            "credentials": {prov: bool(await repo.get_credential(brand.id, prov))
+                            for prov in ("upload_post", "ayrshare")},
+            "warnings": warnings,
+        }
+
     @api.get("/brands/{brand_id}")
     async def get_brand(request: Request, p: Auth, brand_id: str) -> dict[str, Any]:
         await require_brand(request, p, brand_id)
         try:
-            return (await cf(request).repo.get_brand(brand_id)).model_dump(mode="json")
+            return await brand_view(request, await cf(request).repo.get_brand(brand_id))
         except NotFound:
             raise HTTPException(404, "brand not found") from None
 
-    class CredentialIn(BaseModel):
-        provider: str
-        token: str
-        expires_at: datetime | None = None
+    @api.patch("/brands/{brand_id}")
+    async def patch_brand(request: Request, p: Auth, brand_id: str, body: BrandPatch) -> dict[str, Any]:
+        await require_brand(request, p, brand_id)
+        repo = cf(request).repo
+        try:
+            brand = await repo.get_brand(brand_id)
+        except NotFound:
+            raise HTTPException(404, "brand not found") from None
+        fields = body.model_dump(exclude_unset=True, exclude={"kit"})
+        try:
+            kit = BrandKit.model_validate({**brand.kit.model_dump(mode="json"), **(body.kit or {})})
+            merged = {**brand.model_dump(mode="json"), **fields, "kit": kit.model_dump(mode="json")}
+            brand = Brand.model_validate(merged)
+        except ValidationError as e:
+            raise HTTPException(422, e.errors(include_url=False, include_context=False)) from None
+        await repo.upsert_brand(brand)
+        return await brand_view(request, brand)
 
     @api.post("/brands/{brand_id}/credentials", status_code=204)
     async def put_credential(request: Request, p: Auth, brand_id: str, body: CredentialIn) -> None:

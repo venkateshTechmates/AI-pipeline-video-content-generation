@@ -36,9 +36,18 @@ class Platform(StrEnum):
     tiktok = "tiktok"
     linkedin = "linkedin"
     x = "x"
+    facebook = "facebook"  # Facebook Reels (page)
+    threads = "threads"
+    pinterest = "pinterest"  # video pin (needs a board)
+    bluesky = "bluesky"
+    reddit = "reddit"  # needs a subreddit
 
 
 ALL_PLATFORMS: tuple[Platform, ...] = tuple(Platform)
+# PRD's five plus Facebook; brands opt into the rest in their kit.
+DEFAULT_PLATFORMS: tuple[Platform, ...] = (
+    Platform.youtube, Platform.instagram, Platform.tiktok, Platform.linkedin, Platform.x, Platform.facebook,
+)
 
 
 class Aspect(StrEnum):
@@ -110,7 +119,7 @@ class CalendarSlot(BaseModel):
 
     weekday: int = Field(ge=0, le=6)  # Monday = 0
     time: str = "18:00"  # HH:MM
-    platforms: list[Platform] = Field(default_factory=lambda: list(ALL_PLATFORMS))
+    platforms: list[Platform] = Field(default_factory=lambda: list(DEFAULT_PLATFORMS))
 
 
 class PostingCalendar(BaseModel):
@@ -147,7 +156,10 @@ class BrandKit(BaseModel):
     template: str = "default"  # Remotion composition id
     music_moods: list[str] = Field(default_factory=lambda: ["upbeat"])
     disclosure: DisclosurePolicy = Field(default_factory=DisclosurePolicy)
-    platforms: list[Platform] = Field(default_factory=lambda: list(ALL_PLATFORMS))
+    platforms: list[Platform] = Field(default_factory=lambda: list(DEFAULT_PLATFORMS))
+    # Per-platform account targets, e.g. {"facebook": {"page_id": "..."}, "pinterest": {"board_id": "..."},
+    # "reddit": {"subreddit": "..."}}
+    platform_options: dict[Platform, dict[str, str]] = Field(default_factory=dict)
     hashtags: list[str] = Field(default_factory=list)
     # Cross-shot consistency: "reference" = image-to-video from reference_images[0];
     # "first_shot" = generate shot 0, then use its frame as the reference for the rest; "none" = text-to-video.
@@ -385,7 +397,7 @@ class Run(BaseModel):
     cost_total: float = 0.0
     checkpoint_id: str | None = None
     schedule: datetime | None = None
-    platforms: list[Platform] = Field(default_factory=lambda: list(ALL_PLATFORMS))
+    platforms: list[Platform] = Field(default_factory=lambda: list(DEFAULT_PLATFORMS))
     error: str | None = None
     attempts: int = 0
     pending_decision: dict[str, Any] | None = None  # approval decision waiting for the worker to resume

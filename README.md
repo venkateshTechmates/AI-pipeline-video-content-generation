@@ -1,8 +1,9 @@
 # ClipForge
 
 A self-owned, provider-agnostic pipeline that turns a brief into a finished 9:16 short-form video
-(plus 1:1 and 16:9) and publishes it to YouTube Shorts, Instagram Reels, TikTok, LinkedIn and X
-on a schedule. It has a human approval gate, per-run cost caps and full lineage.
+(plus 1:1 and 16:9) and publishes it on a schedule. It posts to YouTube Shorts, Instagram Reels,
+TikTok, Facebook Reels, LinkedIn, X, Threads, Pinterest, Bluesky and Reddit. Platforms are set per brand
+in the review UI. It has a human approval gate, per-run cost caps and full lineage.
 
 **Stack:** FastAPI · LangGraph (Postgres checkpointer) · Pydantic AI (Claude) · Supabase ·
 ffmpeg / Remotion · React review UI.
@@ -49,6 +50,25 @@ docker compose up --build                                 # postgres + api + wor
 4. Deploy `api`, `worker` (scale horizontally) and, with `RENDERER=remotion`, `render/` workers.
 5. Add brands with `POST /brands` (brand kit, tier, budgets, calendar, publisher). Per-brand publisher
    profile keys go through `POST /brands/{id}/credentials` and are stored encrypted.
+
+## Platforms
+
+| Platform | Default on | Needs in the brand kit | AI label | Video |
+|---|---|---|---|---|
+| YouTube Shorts, Instagram Reels, TikTok | ✓ | none | always (platform policy) | 9:16 |
+| Facebook Reels | ✓ | `page_id` (Upload-Post only) | always (platform policy) | 9:16 |
+| LinkedIn | ✓ | none | per brand (UI toggle) | 1:1 |
+| X | ✓ | none | per brand (UI toggle) | 9:16 |
+| Threads | opt-in | none | always (platform policy) | 9:16 |
+| Pinterest | opt-in | `board_id` | per brand (UI toggle) | 9:16 |
+| Bluesky | opt-in | none | per brand (UI toggle) | 9:16 |
+| Reddit | opt-in | `subreddit` | per brand (UI toggle) | 9:16 |
+
+Turn platforms on and fill in their account details on the **Brands** page, in the Platforms & publishing
+editor, or with `PATCH /brands/{id}`. Title and description length and hashtag count are fitted to each
+platform's limits, and posts past a platform's daily cap roll to the next calendar slot. If a platform is on
+but missing a required field, the run records a failed post with the reason and still publishes everywhere
+else. Connect the social accounts themselves in Upload-Post or Ayrshare.
 
 ## Architecture
 
@@ -129,7 +149,8 @@ rejecting resets the streak.
 | POST | `/runs/{id}/approve` | `{decision: approve\|regenerate\|edit\|reject, stage?, patch?, note?}` |
 | POST | `/runs/{id}/retry` | re-queue a failed, aborted or dead-lettered run |
 | GET | `/queue` | runs awaiting approval (scoped to the caller's brands) |
-| GET/POST | `/brands`, `/brands/{id}`, `/brands/{id}/credentials` | brand kits, encrypted publisher keys |
+| GET/POST | `/brands`, `/brands/{id}`, `/brands/{id}/credentials` | brand kits, encrypted publisher keys (GET shows only whether a key is set) |
+| PATCH | `/brands/{id}` | partial update: `kit.platforms`, `kit.platform_options`, disclosure, publisher, budgets, calendar |
 | GET | `/brands/{id}/costs?from&to` | ledger report by provider / stage / day |
 | POST | `/webhooks/fal`, `/webhooks/replicate`, `/webhooks/publisher` | provider callbacks (signature-verified) |
 | POST | `/cron/{calendar,metrics,refresh-tokens,recover}` | pg_cron targets (`x-cron-secret`) |

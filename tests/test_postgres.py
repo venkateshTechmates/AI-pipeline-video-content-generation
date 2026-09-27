@@ -119,7 +119,7 @@ async def test_interrupt_and_resume_across_processes(pg_settings):
         assert claimed[0].id == run.id
         r = await execute(bapp, claimed[0])
         assert r.status == RunStatus.published, r.error
-        assert len(await bapp.repo.list_posts(run.id)) == 5
+        assert len(await bapp.repo.list_posts(run.id)) == 6
         assert {s.name for s in await bapp.repo.list_stages(run.id)} >= {"ideate", "qa", "approve", "publish"}
     finally:
         await bapp.aclose()
