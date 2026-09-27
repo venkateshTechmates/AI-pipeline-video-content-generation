@@ -383,7 +383,7 @@ export const parsePrompt = (promptRaw: string, seed: number): SceneSpec => {
   if (has(/\blightning|thunder|bolts?\b/) && setting !== "underwater") effects.add("lightning");
   if (action === "zap" || has(/\b(spark\w*|electric\w*|arcs?|volts?|zap\w*|shock\w*)\b/)) effects.add("sparks");
   if (has(/\b(glow\w*|energy|aura|radiant|shin(?:e|es|ing)|powers?(?! ?(?:station|plant|grid|lines?))|power(?:ful|ed)|charged|blaz\w*|luminous)\b/)) effects.add("aura");
-  if (has(/\bfireflies|firefly|fairy lights|glowing bugs\b/) || ((setting === "forest" || setting === "meadow") && time === "night")) effects.add("fireflies");
+  if (has(/\bfireflies|firefly|fairy lights|glowing bugs\b/) || ((setting === "forest" || setting === "meadow") && time === "night" && weather !== "snow" && weather !== "rain" && weather !== "storm")) effects.add("fireflies");
   if (setting === "underwater") { effects.add("rays"); effects.add("bubbles"); }
   if (has(/\b(light ?rays?|rays|sun ?beams?|god ?rays|beams? of light|shafts? of light)\b/)) effects.add("rays");
   if (has(/\bbubbles?\b/)) effects.add("bubbles");

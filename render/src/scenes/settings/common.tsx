@@ -4,6 +4,10 @@ import type { Ctx } from "../ctx";
 import { mix, rgba } from "../lib/color";
 import { mod, rnd, rr, TAU } from "../lib/math";
 import { Glow, Layer, tiles, useSid, visibleX } from "../lib/svg";
+import { Lightning } from "../effects/atmos";
+
+/** Sky-level effects drawn between the sky and the scenery (lightning bolts). */
+export const SkyFx: React.FC<{ ctx: Ctx }> = ({ ctx }) => (ctx.spec.effects.includes("lightning") ? <Lightning ctx={ctx} /> : null);
 
 /** Smooth deterministic height field in [-1, 1] over world x. */
 export const hillNoise = (x: number, seed: number, key: string | number, scale = 1): number => {

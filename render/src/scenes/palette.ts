@@ -90,6 +90,7 @@ export const makePalette = (time: TimeOfDay, weather: Weather, setting: SettingI
 
 /** Tint a character/prop colour by the scene light. */
 export const litBy = (p: Palette) => (c: string, flash = 0): string => {
-  const base = multiply(c, p.ambient);
+  // Subjects keep some of their own colour so they stay readable in dim scenes.
+  const base = mix(multiply(c, p.ambient), c, p.night ? 0.28 : 0.2);
   return flash > 0 ? mix(base, mix(c, "#eef4ff", 0.35), flash) : base;
 };

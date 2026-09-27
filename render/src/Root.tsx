@@ -1,6 +1,7 @@
 import React from "react";
 import { Composition, type CalculateMetadataFunction } from "remotion";
 import { sampleSpec } from "./sample";
+import { SceneCompositions } from "./scenes";
 import { BoldTemplate } from "./templates/Bold";
 import { DefaultTemplate } from "./templates/Default";
 import { ASPECTS, ASPECT_SIZE, compositionId, type CompositionProps, type TemplateId } from "./types";
@@ -34,5 +35,6 @@ export const RemotionRoot: React.FC = () => (
         />
       )),
     )}
+    <SceneCompositions />
   </>
 );

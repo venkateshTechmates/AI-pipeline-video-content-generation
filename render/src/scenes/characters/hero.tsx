@@ -17,7 +17,7 @@ const SUITS = [
   { suit: "#6b3fd4", accent: "#22c3e6", cape: "#10698a", emblem: "#a5f3fc" },
   { suit: "#b3202a", accent: "#fbbf24", cape: "#1e3a8a", emblem: "#fbbf24" },
   { suit: "#eef2f7", accent: "#2563eb", cape: "#1d4ed8", emblem: "#2563eb" },
-  { suit: "#16a34a", accent: "#111827", cape: "#111827", emblem: "#bbf7d0" },
+  { suit: "#15803d", accent: "#facc15", cape: "#f97316", emblem: "#fef08a" },
 ];
 const SKINS = ["#f3cfb0", "#e7b48a", "#c98c5a", "#9a6038", "#6b4125", "#ffe0c2"];
 const HAIRS = ["#1b1712", "#3b2414", "#6b3b1c", "#c9923e", "#8b2c14", "#e7d3a1"];
@@ -263,9 +263,9 @@ const HeroFly: React.FC<CharProps> = (p) => {
       <path d={capeD} fill={darken(cape, 0.3)} />
       <path d={capeD} fill={cape} transform="translate(4,-8) scale(0.97,0.9)" />
       {/* back leg */}
-      <J x={-80} y={-6} r={84 + kick * 4}>
+      <J x={-74} y={-14} r={100 + kick * 5}>
         <path d={limbPath(150, 50, 38)} fill={darken(suit, 0.15)} />
-        <J y={142} r={20 - kick * 8}>
+        <J y={142} r={52 - kick * 10}>
           <path d={limbPath(150, 38, 28)} fill={darken(suit, 0.15)} />
           <path d="M-19,70 L19,70 L14,150 L-14,150Z" fill={darken(acc, 0.15)} />
           <ellipse cx={-3} cy={156} rx={15} ry={24} fill={darken(acc, 0.2)} />

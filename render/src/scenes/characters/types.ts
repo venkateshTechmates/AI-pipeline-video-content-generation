@@ -10,6 +10,8 @@ export type CharProps = {
   idx: number;
   /** Local time (s), already offset per instance. */
   t: number;
+  /** Scale the scene draws this character at (world units per local unit). */
+  scale: number;
 };
 
 /** Where the scene puts a character and how big: feet (or body centre for flyers) at (x, y). */

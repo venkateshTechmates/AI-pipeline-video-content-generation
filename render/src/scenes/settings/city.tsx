@@ -4,7 +4,7 @@ import type { Ctx } from "../ctx";
 import { darken, lighten, mix } from "../lib/color";
 import { mod, rnd, rr, TAU } from "../lib/math";
 import { Glow, Layer, tiles, useSid } from "../lib/svg";
-import { Clouds, HorizonHaze, Orb, Sky, Stars } from "./common";
+import { Clouds, HorizonHaze, Orb, Sky, SkyFx, Stars } from "./common";
 
 type BProps = { ctx: Ctx; x: number; w: number; h: number; base: number; body: string; side: string; k: string; detail: number };
 
@@ -239,6 +239,8 @@ export const CityBack: React.FC<{ ctx: Ctx; rooftops?: boolean }> = ({ ctx, roof
       <Stars ctx={ctx} maxY={0.5} />
       <Orb ctx={ctx} />
       <Clouds ctx={ctx} depth={0.05} y={VH * 0.22} size={520} density={pal.stars ? 0.35 : 0.6} opacity={night ? 0.7 : 0.9} k="c1" />
+      <SkyFx ctx={ctx} />
+      {ctx.spec.weather === "storm" ? <Clouds ctx={ctx} depth={0.08} y={VH * 0.1} size={700} density={0.95} speed={40} k="st" /> : null}
       <FarSkyline ctx={ctx} base={base - 120} color={far} />
       <HorizonHaze ctx={ctx} y={base - 150} h={300} opacity={night ? 0.5 : 0.55} />
       {skylineLayer(ctx, 0.25, "mid", base - 60, 380, 820, 110, 190, mid, 0.8, 170)}
