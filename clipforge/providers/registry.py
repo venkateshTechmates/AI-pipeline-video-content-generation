@@ -50,7 +50,7 @@ def build_providers(settings: Settings, repo: Repo, store: AssetStore) -> Provid
     from .publish import AyrshareMetrics, AyrsharePublisher, UploadPostMetrics, UploadPostPublisher
     from .render import CreatomateRenderer, FfmpegRenderer, RemotionRenderer
     from .replicate import ReplicateVideo
-    from .tts import ElevenLabsTTS, OpenAITTS
+    from .tts import ElevenLabsTTS, GeminiTTS, OpenAITTS
     from .veo import VeoVideo
 
     economy: list[VideoGen] = []
@@ -75,10 +75,12 @@ def build_providers(settings: Settings, repo: Repo, store: AssetStore) -> Provid
     tts: list[TTS] = []
     if settings.elevenlabs_api_key:
         tts.append(ElevenLabsTTS(settings.elevenlabs_api_key))
+    if settings.google_api_key:
+        tts.append(GeminiTTS(settings.google_api_key))
     if settings.openai_api_key:
         tts.append(OpenAITTS(settings.openai_api_key))
     if not tts and settings.tts_provider != "espeak":
-        raise RuntimeError("no TTS provider configured (ELEVENLABS_API_KEY / OPENAI_API_KEY)")
+        raise RuntimeError("no TTS provider configured (ELEVENLABS_API_KEY / GOOGLE_API_KEY / OPENAI_API_KEY)")
 
     music: list[MusicSource] = []
     if settings.music_library_dir:

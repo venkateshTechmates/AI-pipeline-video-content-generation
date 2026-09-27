@@ -35,8 +35,12 @@ class VeoVideo:
                  waiter: JobWaiter | None = None, client: httpx.AsyncClient | None = None):
         if not api_key and not project:
             raise ValueError("Veo needs GOOGLE_API_KEY or GOOGLE_PROJECT")
+        import os
+
         self.variant = variant
-        self.model = VEO_MODELS[variant]
+        # Google renames preview models; override with e.g. VEO_MODEL_VEO_3_1_LITE=veo-3.1-lite-generate-001
+        self.model = os.environ.get(f"VEO_MODEL_{variant.upper().replace('-', '_').replace('.', '_')}",
+                                    VEO_MODELS[variant])
         self.name = f"vertex:{variant}"
         # Veo 3.1 scene extension reaches ~60 s; single request is up to 8 s.
         self.max_clip_seconds = 8.0

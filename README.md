@@ -39,6 +39,13 @@ docker compose up --build                                 # postgres + api + wor
 
 ## Going live
 
+**Shortest production path:** two keys, both reachable from restricted networks:
+- `ANTHROPIC_API_KEY` for Claude (ideas, script, captions, moderation)
+- `GOOGLE_API_KEY` from Google AI Studio for Veo 3.1 video and Gemini TTS voice
+
+Set `PROVIDER_MODE=live`. The economy tier then uses Veo 3.1 Lite (~$0.05/s) and premium uses Veo 3.1
+(~$0.40/s). Add fal/ElevenLabs keys for Kling and ElevenLabs.
+
 1. `cp .env.example .env` and set `PROVIDER_MODE=live`. You need at least:
    - an LLM key: `ANTHROPIC_API_KEY`
    - a video key: `FAL_KEY`

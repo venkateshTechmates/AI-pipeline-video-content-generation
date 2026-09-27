@@ -121,3 +121,62 @@ class EspeakTTS:
             audio = mp3.read_bytes()
         return TTSResult(audio=audio, words=estimate_word_timings(text, dur - 0.05), characters=len(text),
                          duration=dur)
+
+
+class GeminiTTS:
+    """Google Gemini TTS (same GOOGLE_API_KEY as Veo). Returns 24 kHz PCM, converted to mp3 here.
+
+    No word timestamps: timings are estimated over the measured audio length. `voice_id` values that are
+    not Gemini prebuilt voice names fall back to `default_voice`.
+    """
+
+    name = "gemini:tts"
+    VOICES = {"Kore", "Puck", "Charon", "Fenrir", "Aoede", "Leda", "Orus", "Zephyr", "Enceladus", "Sadachbia",
+              "Algenib", "Gacrux", "Iapetus", "Rasalgethi", "Schedar", "Sulafat", "Umbriel", "Vindemiatrix"}
+    URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash-preview-tts", default_voice: str = "Charon",
+                 style: str = "Read this as a warm, confident short-form video narrator:",
+                 client: httpx.AsyncClient | None = None):
+        self.api_key = api_key
+        self.model = model
+        self.default_voice = default_voice
+        self.style = style
+        self.client = client or httpx.AsyncClient(timeout=180)
+
+    async def synthesize(self, text: str, voice_id: str) -> TTSResult:
+        voice = voice_id if voice_id in self.VOICES else self.default_voice
+        await bucket("vertex").acquire()
+        r = await self.client.post(
+            self.URL.format(model=self.model),
+            headers={"x-goog-api-key": self.api_key},
+            json={
+                "contents": [{"parts": [{"text": f"{self.style} {text}"}]}],
+                "generationConfig": {
+                    "responseModalities": ["AUDIO"],
+                    "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice}}},
+                },
+            },
+        )
+        if r.status_code in (400, 401, 403):
+            from ..retry import PermanentError
+
+            raise PermanentError(f"gemini tts: {r.text[:300]}")
+        r.raise_for_status()
+        try:
+            part = r.json()["candidates"][0]["content"]["parts"][0]["inlineData"]
+        except (KeyError, IndexError) as e:
+            raise ProviderError(f"gemini tts returned no audio: {r.text[:300]}") from e
+        rate = 24000
+        mime = part.get("mimeType", "")
+        if "rate=" in mime:
+            rate = int(mime.split("rate=")[1].split(";")[0])
+        with tempfile.TemporaryDirectory() as d:
+            pcm, mp3 = Path(d) / "vo.pcm", Path(d) / "vo.mp3"
+            pcm.write_bytes(base64.b64decode(part["data"]))
+            await media.run([media.ffmpeg(), "-y", "-f", "s16le", "-ar", str(rate), "-ac", "1", "-i", str(pcm),
+                             "-c:a", "libmp3lame", "-b:a", "128k", str(mp3)])
+            dur = await media.duration(mp3)
+            audio = mp3.read_bytes()
+        return TTSResult(audio=audio, words=estimate_word_timings(text, dur - 0.05), characters=len(text),
+                         duration=dur)

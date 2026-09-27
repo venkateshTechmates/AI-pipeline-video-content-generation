@@ -69,3 +69,37 @@ async def test_ayrshare_platform_names_and_options():
     for p in (Platform.threads, Platform.bluesky):
         await pub.publish(req(p))
         assert json.loads(seen[-1].content)["platforms"] == [p.value]
+
+
+async def test_gemini_tts_pcm_to_mp3():
+    import base64
+    import math
+    import shutil
+    import struct
+
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg not installed")
+    from clipforge.providers.tts import GeminiTTS
+
+    pcm = b"".join(struct.pack("<h", int(8000 * math.sin(2 * math.pi * 220 * i / 24000))) for i in range(24000 * 2))
+    seen, client = capture({"candidates": [{"content": {"parts": [{"inlineData": {
+        "mimeType": "audio/L16;codec=pcm;rate=24000", "data": base64.b64encode(pcm).decode()}}]}}]})
+    res = await GeminiTTS("gk", client=client).synthesize("Heroes show up when the lights go out.", "not-a-voice")
+    body = json.loads(seen[0].content)
+    assert seen[0].headers["x-goog-api-key"] == "gk"
+    assert body["generationConfig"]["speechConfig"]["voiceConfig"]["prebuiltVoiceConfig"]["voiceName"] == "Charon"
+    assert 1.8 < res.duration < 2.3 and len(res.words) == 8 and res.audio[:3] in (b"ID3", b"\xff\xfb", b"\xff\xf3")
+
+
+def test_live_registry_with_anthropic_and_google_only(tmp_path):
+    from clipforge.config import Settings
+    from clipforge.db import MemoryRepo
+    from clipforge.models import Tier
+    from clipforge.providers.registry import build_providers
+    from clipforge.storage import LocalStore
+
+    s = Settings(_env_file=None, provider_mode="live", anthropic_api_key="a", google_api_key="g")
+    p = build_providers(s, MemoryRepo(), LocalStore(tmp_path))
+    assert [v.name for v in p.video_chain(Tier.economy)] == ["vertex:veo-3.1-lite"]
+    assert [v.name for v in p.video_chain(Tier.premium)] == ["vertex:veo-3.1", "vertex:veo-3.1-fast"]
+    assert [t.name for t in p.tts] == ["gemini:tts"]
