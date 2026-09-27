@@ -96,6 +96,9 @@ class Repo(Protocol):
         """trace_id -> {spans, errors, start, end}"""
         ...
     async def spans_between(self, start: datetime, end: datetime, brand_ids: list[str] | None) -> list[Any]: ...
+    async def stage_spans(self, trace_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
+        """trace_id -> [{name, duration_ms, status}] for stage spans, in start order."""
+        ...
     async def find_post_by_external(self, external_id: str) -> PostRecord | None: ...
     async def claim_runs(self, worker: str, limit: int = 1) -> list[Run]:
         """Atomically move queued / resume_requested runs to running for this worker."""
@@ -302,6 +305,14 @@ class MemoryRepo:
             c["start"] = min(c["start"], s.start_at)
             end = s.end_at or s.start_at
             c["end"] = max(c["end"], end) if c["end"] else end
+        return out
+
+    async def stage_spans(self, trace_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
+        out: dict[str, list[dict[str, Any]]] = {}
+        for s in sorted(self.spans.values(), key=lambda s: s.start_at):
+            if s.kind == "stage" and s.trace_id in trace_ids:
+                out.setdefault(s.trace_id, []).append({"name": s.name, "duration_ms": s.duration_ms,
+                                                       "status": s.status})
         return out
 
     async def spans_between(self, start: datetime, end: datetime, brand_ids: list[str] | None) -> list[Any]:
@@ -721,6 +732,18 @@ class PostgresRepo:
                  max(coalesce(end_at, start_at)) f from trace_spans where trace_id = any(%s::uuid[])
                group by trace_id""", trace_ids)
         return {str(r["trace_id"]): {"spans": r["n"], "errors": r["e"], "start": r["s"], "end": r["f"]} for r in rows}
+
+    async def stage_spans(self, trace_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
+        if not trace_ids:
+            return {}
+        rows = await self._all(
+            """select trace_id, name, duration_ms, status from trace_spans
+               where kind = 'stage' and trace_id = any(%s::uuid[]) order by start_at""", trace_ids)
+        out: dict[str, list[dict[str, Any]]] = {}
+        for r in rows:
+            out.setdefault(str(r["trace_id"]), []).append(
+                {"name": r["name"], "duration_ms": r["duration_ms"], "status": r["status"]})
+        return out
 
     async def spans_between(self, start: datetime, end: datetime, brand_ids: list[str] | None) -> list[Any]:
         q = """select s.* from trace_spans s join runs r on r.id = s.trace_id

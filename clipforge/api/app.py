@@ -342,6 +342,7 @@ def create_app(settings: Settings | None = None, app_state: App | None = None,
     async def trace_summaries(request: Request, runs: list[Run]) -> list[dict[str, Any]]:
         repo = cf(request).repo
         counts = await repo.span_counts([r.id for r in runs])
+        stages = await repo.stage_spans([r.id for r in runs])
         names: dict[str, str] = {}
         out = []
         for r in runs:
@@ -352,7 +353,8 @@ def create_app(settings: Settings | None = None, app_state: App | None = None,
                     names[r.brand_id] = "?"
             c = counts.get(r.id, {})
             start, end = c.get("start") or r.created_at, c.get("end")
-            running = r.status in (RunStatus.queued, RunStatus.running, RunStatus.resume_requested)
+            running = r.status in (RunStatus.queued, RunStatus.running, RunStatus.resume_requested,
+                                   RunStatus.awaiting_approval)  # paused traces have no end yet
             title = ((await repo.get_run_state(r.id)).get("script") or {}).get("title") or r.brief
             out.append({
                 "trace_id": r.id, "run_id": r.id, "brand_id": r.brand_id, "brand_name": names[r.brand_id],
@@ -360,7 +362,7 @@ def create_app(settings: Settings | None = None, app_state: App | None = None,
                 "ended_at": None if running or not end else end.isoformat(),
                 "duration_ms": round(((end or start) - start).total_seconds() * 1000, 1) if end else None,
                 "span_count": c.get("spans", 0), "error_count": c.get("errors", 0), "cost_total": r.cost_total,
-                "language": r.language, "tier": r.tier.value,
+                "language": r.language, "tier": r.tier.value, "stages": stages.get(r.id, []),
             })
         return out
 
@@ -398,10 +400,13 @@ def create_app(settings: Settings | None = None, app_state: App | None = None,
 
         providers: dict[tuple[str, str], list[Any]] = defaultdict(list)
         stages: dict[str, list[Any]] = defaultdict(list)
+        cost_by_provider: dict[str, float] = defaultdict(float)  # ledger charges are `cost` events on stage spans
         for s in spans:
+            for ev in s.events:
+                if ev.name == "cost":
+                    cost_by_provider[str(ev.attributes.get("provider"))] += float(ev.attributes.get("usd") or 0)
             if s.kind in ("llm", "video", "tts", "music", "render", "publish"):
-                key = s.attributes.get("model") if s.kind == "llm" else s.attributes.get("provider")
-                providers[(str(key or s.name), s.kind)].append(s)
+                providers[(str(s.attributes.get("provider") or s.name), s.kind)].append(s)
             elif s.kind == "stage":
                 stages[s.name].append(s)
 
@@ -414,7 +419,7 @@ def create_app(settings: Settings | None = None, app_state: App | None = None,
         provider_stats = []
         for (name, kind), group in providers.items():
             st = stat(group)
-            st["cost"] = round(sum(float(s.attributes.get("cost_usd", 0) or 0) for s in group), 4)
+            st["cost"] = round(cost_by_provider.get(name, 0.0), 4)
             provider_stats.append({"name": name, "kind": kind, **st})
         stage_stats = []
         for name, group in stages.items():
@@ -431,10 +436,11 @@ def create_app(settings: Settings | None = None, app_state: App | None = None,
             by_day[day]["errors"] += 1 if t["error_count"] else 0
             by_day[day]["cost"] = round(by_day[day]["cost"] + t["cost_total"], 4)
         slowest = sorted((t for t in summaries if t["duration_ms"]), key=lambda t: -t["duration_ms"])[:10]
+        days = [(start_d + timedelta(days=i)).isoformat() for i in range((end_d - start_d).days + 1)]
         return {
             "providers": sorted(provider_stats, key=lambda x: -x["calls"]),
             "stages": sorted(stage_stats, key=lambda x: x["name"]),
-            "throughput": [{"day": d, **v} for d, v in sorted(by_day.items())],
+            "throughput": [{"day": d, **by_day.get(d, {"runs": 0, "errors": 0, "cost": 0.0})} for d in days],
             "slowest": slowest,
         }
 

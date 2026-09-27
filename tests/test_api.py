@@ -192,8 +192,8 @@ async def test_traces_api(client, cf):
     stage = Span(trace_id=run.id, parent_id=root.id, name="gen_shot", kind="stage", start_at=t0,
                  end_at=t0 + timedelta(seconds=5), duration_ms=5000)
     ok = Span(trace_id=run.id, parent_id=stage.id, name="video:fal:kling-3.0", kind="video", start_at=t0,
-              end_at=t0 + timedelta(seconds=4), duration_ms=4000,
-              attributes={"provider": "fal:kling-3.0", "cost_usd": 0.42})
+              end_at=t0 + timedelta(seconds=4), duration_ms=4000, attributes={"provider": "fal:kling-3.0"})
+    stage.event("cost", provider="fal:kling-3.0", usd=0.42)  # ledger charges land on the stage span
     bad = Span(trace_id=run.id, parent_id=stage.id, name="video:fal:kling-3.0", kind="video", status="error",
                start_at=t0, end_at=t0 + timedelta(seconds=1), duration_ms=1000, error="boom",
                attributes={"provider": "fal:kling-3.0"})
@@ -202,6 +202,7 @@ async def test_traces_api(client, cf):
     items = client.get("/traces").json()["items"]
     t = next(i for i in items if i["trace_id"] == run.id)
     assert t["span_count"] == 4 and t["error_count"] == 1 and t["duration_ms"] == 9000 and t["brand_name"]
+    assert t["stages"] == [{"name": "gen_shot", "duration_ms": 5000, "status": "ok"}]
     assert [i["trace_id"] for i in client.get("/traces", params={"status": "error"}).json()["items"]] == [run.id]
     assert client.get("/traces", params={"q": "nomatch"}).json()["items"] == []
     d = client.get(f"/traces/{run.id}").json()
@@ -209,7 +210,8 @@ async def test_traces_api(client, cf):
     st = client.get("/traces/stats").json()
     prov = next(x for x in st["providers"] if x["name"] == "fal:kling-3.0")
     assert prov["calls"] == 2 and prov["errors"] == 1 and prov["cost"] == 0.42 and prov["p95_ms"] > prov["p50_ms"]
-    assert any(x["name"] == "gen_shot" for x in st["stages"]) and st["throughput"][0]["runs"] >= 1
+    assert any(x["name"] == "gen_shot" for x in st["stages"])
+    assert len(st["throughput"]) == 15 and st["throughput"][-1]["runs"] >= 1  # 14-day range, zero-filled
 
 
 async def test_region_drives_default_language(client, cf):

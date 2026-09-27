@@ -510,7 +510,7 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
         spec_hash = _stable_hash([spec.model_dump(mode="json"), nonce])[:16]
         spec.output_prefix = f"runs/{state['run_id']}/render/{spec_hash}"
         renderer = providers.renderer
-        async with tracing.span(f"render:{renderer.name}", kind="render", renderer=renderer.name,
+        async with tracing.span(f"render:{renderer.name}", kind="render", provider=renderer.name,
                                 aspects=len(spec.aspects), seconds=spec.duration, language=spec.language):
             result = await renderer.render(spec)
         await ctx.charge(f"{result.renderer}:render", len(result.outputs) if result.renderer == "creatomate" else 0)

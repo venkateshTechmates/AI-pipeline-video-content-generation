@@ -170,7 +170,7 @@ class TracingLLM:
 
         async def traced(*args: Any, **kwargs: Any) -> Any:
             async with span(f"llm.{item}", kind="llm", model=self._model, method=item,
-                            language=kwargs.get("language")) as s:
+                            provider=f"{self._model.split(':')[0]}:llm", language=kwargs.get("language")) as s:
                 out = await target(*args, **kwargs)
                 if s is not None and isinstance(out, tuple) and len(out) == 2 and isinstance(out[1], int):
                     s.set(tokens=out[1])
