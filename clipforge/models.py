@@ -372,6 +372,14 @@ class ApprovalDecision(BaseModel):
             raise ValueError("regenerate requires stage")
         if self.decision == Decision.edit and not self.patch:
             raise ValueError("edit requires patch")
+        shots = (self.patch or {}).get("shots")
+        if shots is not None:
+            if not isinstance(shots, list) or not 3 <= len(shots) <= 6:
+                raise ValueError("patch.shots must be a list of 3-6 shots")
+            for s in shots:
+                prompt = s.get("prompt") if isinstance(s, dict) else s
+                if not isinstance(prompt, str) or not prompt.strip():
+                    raise ValueError("each shot needs a non-empty prompt")
         return self
 
 

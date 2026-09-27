@@ -288,7 +288,7 @@ function QueueCard({
           </span>
         </div>
 
-        <DecisionBar ref={barRef} script={script} onDecide={onDecide} showShortcuts={focused} block />
+        <DecisionBar ref={barRef} script={script} shots={item.shot_list?.shots} onDecide={onDecide} showShortcuts={focused} block />
       </div>
     </article>
   );

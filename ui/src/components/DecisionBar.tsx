@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Ban, Check, ChevronDown, Pencil, RefreshCw } from "lucide-react";
-import { REGENERATABLE, type ApprovalDecision, type RegenStage, type Script } from "../types";
+import { REGENERATABLE, type ApprovalDecision, type RegenStage, type Script, type Shot } from "../types";
 import { STAGE_META } from "./icons";
 import { ScriptEditor } from "./ScriptEditor";
 import { Kbd, Modal, Spinner } from "./ui";
@@ -14,6 +14,7 @@ export interface DecisionBarHandle {
 
 interface Props {
   script: Script | null;
+  shots?: Shot[];
   /** Performs the decision; rejects to keep the bar interactive. */
   onDecide: (d: ApprovalDecision) => Promise<void>;
   showShortcuts?: boolean;
@@ -24,7 +25,7 @@ interface Props {
 
 /** Approve / Regenerate (stage menu) / Edit script / Reject (note) for one run. */
 export const DecisionBar = forwardRef<DecisionBarHandle, Props>(function DecisionBar(
-  { script, onDecide, showShortcuts, disabled, block },
+  { script, shots, onDecide, showShortcuts, disabled, block },
   ref,
 ) {
   const [menu, setMenu] = useState(false);
@@ -175,6 +176,7 @@ export const DecisionBar = forwardRef<DecisionBarHandle, Props>(function Decisio
         {script && (
           <ScriptEditor
             script={script}
+            shots={shots}
             busy={busy === "edit"}
             onCancel={() => setModal(null)}
             onSubmit={(patch, n) => void send({ decision: "edit", patch, note: n.trim() || undefined })}

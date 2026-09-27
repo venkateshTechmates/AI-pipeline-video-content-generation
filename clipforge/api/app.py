@@ -270,6 +270,7 @@ def create_app(settings: Settings | None = None, app_state: App | None = None,
             vertical = next((x for x in st.get("renders") or [] if x["aspect"] == "9:16"), None)
             items.append({"run": r.model_dump(mode="json"), "brand_name": names[r.brand_id],
                           "qa": st.get("qa_report"), "script": st.get("script"), "vo": st.get("vo"),
+                          "shot_list": st.get("shot_list"),
                           "preview_url": with_url(request, vertical["path"]) if vertical else None,
                           "cost_total": r.cost_total, "budget": r.budget})
         return {"items": items}

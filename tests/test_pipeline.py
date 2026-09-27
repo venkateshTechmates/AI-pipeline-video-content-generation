@@ -208,3 +208,17 @@ async def test_all_platforms_with_account_options(app):
     assert all(p.status == "published" for k, p in posts.items() if k != Platform.reddit)
     assert posts[Platform.threads].metadata["hashtags"].__len__() <= 1
     assert len(posts[Platform.bluesky].metadata["description"]) <= 300
+
+
+async def test_edit_shot_prompts_regenerates_clips(app):
+    run = await new_run(app, budget_per_run=10.0)  # new clips are paid again; the $3 default would abort
+    await execute(app, run)
+    calls = sum(p.calls for p in app.deps.providers.video_chain(Tier.economy) if isinstance(p, FakeVideo))
+    shots = ["A caped hero flies over a stormy city", "Sparks crawl up a nurse's arms",
+             {"prompt": "A glowing figure above rooftops at sunrise", "duration": 9}]
+    r = await decide(app, run.id, decision="edit", patch={"shots": shots})
+    assert r.status == RunStatus.awaiting_approval, r.error
+    st = await app.repo.get_run_state(run.id)
+    assert [s["prompt"] for s in st["shot_list"]["shots"]] == [shots[0], shots[1], shots[2]["prompt"]]
+    assert {t["shot_index"] for t in st["timeline"]} == {0, 1, 2}
+    assert sum(p.calls for p in app.deps.providers.video_chain(Tier.economy) if isinstance(p, FakeVideo)) > calls

@@ -521,12 +521,26 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
             if stage == "ideate" and state.get("hook"):
                 upd["rejected_hooks"] = [*(state.get("rejected_hooks") or []), state["hook"]["text"]]
             return Command(goto=stage, update=upd)
-        # edit: patch the script, then redo VO and everything downstream
-        sc = Script.model_validate({**state["script"], **(decision.patch or {})})
-        if "beats" not in (decision.patch or {}) and "vo_text" in (decision.patch or {}):
-            sc.caption_text = decision.patch.get("caption_text", sc.vo_text)
-        upd = {**clear_from("tts"), "script": sc.model_dump(), "decision": d, "nonce": nonce}
-        await _snapshot(deps, state["run_id"], {"script": upd["script"]})
+        # edit: patch the script (and optionally the shot list), then redo VO and everything downstream
+        patch = dict(decision.patch or {})
+        shots_patch = patch.pop("shots", None)
+        shot_list = state["shot_list"]
+        if shots_patch is not None:
+            brand = await repo.get_brand(state["brand_id"])
+            neg = ", ".join(brand.kit.negative_prompts)
+            old = ShotList.model_validate(state["shot_list"]).shots
+            avg = sum(s.duration for s in old) / len(old)
+            shot_list = ShotList.model_validate({"shots": [
+                {"index": i, "prompt": (s["prompt"] if isinstance(s, dict) else str(s)),
+                 "duration": float(s.get("duration", avg)) if isinstance(s, dict) else avg,
+                 "negative_prompt": (s.get("negative_prompt") if isinstance(s, dict) else None) or neg}
+                for i, s in enumerate(shots_patch)]}).model_dump()
+        sc = Script.model_validate({**state["script"], **patch})
+        if "beats" not in patch and "vo_text" in patch:
+            sc.caption_text = patch.get("caption_text", sc.vo_text)
+        upd = {**clear_from("tts"), "script": sc.model_dump(), "shot_list": shot_list, "decision": d,
+               "nonce": nonce}
+        await _snapshot(deps, state["run_id"], {"script": upd["script"], "shot_list": shot_list})
         return Command(goto="tts", update=upd)
 
     # ------------------------------------------------------------------ 9 metadata

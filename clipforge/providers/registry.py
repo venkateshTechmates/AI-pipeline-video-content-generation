@@ -6,6 +6,7 @@ premium  = Veo 3.1 std      -> Veo Fast -> Kling 3.0 (fal)
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 from ..config import Settings
@@ -14,6 +15,8 @@ from ..models import Brand, Tier
 from ..storage import AssetStore
 from . import fake
 from .base import TTS, MetricsSource, MusicSource, Publisher, Renderer, VideoGen
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -39,6 +42,9 @@ class Providers:
 def build_providers(settings: Settings, repo: Repo, store: AssetStore) -> Providers:
     if settings.provider_mode == "fake":
         providers = fake_providers(store, settings.x264_preset, settings.demo_video_style)
+        if settings.video_provider == "animated" or settings.demo_video_style == "animated":
+            anim = _animated(settings)
+            providers.video = {Tier.economy: [anim], Tier.premium: [anim]}
         if settings.renderer == "remotion":  # exercise the real render workers with fake inputs
             from .render import RemotionRenderer
 
@@ -69,8 +75,17 @@ def build_providers(settings: Settings, repo: Repo, store: AssetStore) -> Provid
         economy.append(veo("veo-3.1-lite"))
         premium += [veo("veo-3.1"), veo("veo-3.1-fast")]
     premium += [p for p in economy if p.name.startswith("fal:kling")]
+    if settings.video_provider == "animated" or not economy:
+        if not economy:
+            log.warning("no AI video provider configured: shots will be locally generated animation")
+        economy, premium = [_animated(settings)], [_animated(settings)]
+    elif settings.animation_fallback:
+        anim = _animated(settings)
+        economy.append(anim)
+        premium.append(anim)
     if not economy:
-        raise RuntimeError("no video provider configured (FAL_KEY / REPLICATE_API_TOKEN / GOOGLE_*)")
+        raise RuntimeError("no video provider configured (FAL_KEY / REPLICATE_API_TOKEN / GOOGLE_* / "
+                           "VIDEO_PROVIDER=animated)")
 
     tts: list[TTS] = []
     if settings.elevenlabs_api_key:
@@ -112,6 +127,19 @@ def build_providers(settings: Settings, repo: Repo, store: AssetStore) -> Provid
     return _with_local_tts(settings, Providers(
         video={Tier.economy: economy, Tier.premium: premium or economy}, tts=tts, music=music,
         renderer=renderer, publishers=publishers, metrics=metrics))
+
+
+_anim_singleton: dict[str, object] = {}
+
+
+def _animated(settings: Settings):
+    """One shared instance so parallel shots are batched into a single render call."""
+    from .animated import AnimatedVideo
+
+    key = str(settings.render_dir or "")
+    if key not in _anim_singleton:
+        _anim_singleton[key] = AnimatedVideo(settings.render_dir)
+    return _anim_singleton[key]
 
 
 def _with_local_tts(settings: Settings, providers: Providers) -> Providers:

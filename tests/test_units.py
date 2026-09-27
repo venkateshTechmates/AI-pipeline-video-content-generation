@@ -104,6 +104,9 @@ def test_approval_decision_validation():
     with pytest.raises(ValueError):
         ApprovalDecision(decision="edit")
     assert ApprovalDecision(decision="edit", patch={"cta": "Follow!"}).patch
+    with pytest.raises(ValueError):
+        ApprovalDecision(decision="edit", patch={"shots": ["only one"]})
+    assert ApprovalDecision(decision="edit", patch={"shots": ["a", {"prompt": "b"}, "c"]})
 
 
 def test_qa_score_and_blocking():

@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     render_overflow_threshold: int = 20  # queued remotion jobs before overflowing to Creatomate
     x264_preset: str = "medium"  # ultrafast in tests
     demo_video_style: str = "testsrc"  # offline clip look in PROVIDER_MODE=fake: testsrc | gradients | cosmic
+    # "animated" = local procedural animation (render/ scene engine) as the video provider, any mode
+    video_provider: str | None = None
+    # append animated shots as the last fallback after AI video providers (always used if none is configured)
+    animation_fallback: bool = False
+    render_dir: Path | None = None  # path to render/ (defaults to the repo's render/)
     ffmpeg_bin: str = "ffmpeg"
     ffprobe_bin: str = "ffprobe"
 

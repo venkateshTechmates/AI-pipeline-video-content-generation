@@ -4021,3 +4021,16 @@ a.lnode:hover {
     grid-template-columns: 1fr;
   }
 }
+
+.shot-row {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  gap: 6px;
+  width: 100%;
+  align-items: start;
+}
+.shot-num {
+  padding-top: 8px;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}

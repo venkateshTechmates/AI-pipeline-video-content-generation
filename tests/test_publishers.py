@@ -103,3 +103,18 @@ def test_live_registry_with_anthropic_and_google_only(tmp_path):
     assert [v.name for v in p.video_chain(Tier.economy)] == ["vertex:veo-3.1-lite"]
     assert [v.name for v in p.video_chain(Tier.premium)] == ["vertex:veo-3.1", "vertex:veo-3.1-fast"]
     assert [t.name for t in p.tts] == ["gemini:tts"]
+
+
+def test_registry_falls_back_to_animation_without_video_keys(tmp_path):
+    from clipforge.config import Settings
+    from clipforge.db import MemoryRepo
+    from clipforge.models import Tier
+    from clipforge.providers.registry import build_providers
+    from clipforge.storage import LocalStore
+
+    s = Settings(_env_file=None, provider_mode="live", anthropic_api_key="a", elevenlabs_api_key="e")
+    p = build_providers(s, MemoryRepo(), LocalStore(tmp_path))
+    assert [v.name for v in p.video_chain(Tier.economy)] == ["local:animation"]
+    s2 = s.model_copy(update={"fal_key": "f", "animation_fallback": True})
+    names = [v.name for v in build_providers(s2, MemoryRepo(), LocalStore(tmp_path)).video_chain(Tier.economy)]
+    assert names[0] == "fal:kling-3.0" and names[-1] == "local:animation"

@@ -1,19 +1,22 @@
 import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { BEAT_PURPOSES, type Beat, type BeatPurpose, type Script } from "../types";
+import { BEAT_PURPOSES, type Beat, type BeatPurpose, type Script, type ScriptPatch, type Shot } from "../types";
 import { Spinner } from "./ui";
 
 interface Props {
   script: Script;
+  shots?: Shot[];
   busy?: boolean;
-  onSubmit: (patch: Partial<Script>, note: string) => void;
+  onSubmit: (patch: ScriptPatch, note: string) => void;
   onCancel: () => void;
 }
 
 type Editable = Pick<Script, "title" | "hook" | "vo_text" | "caption_text" | "cta" | "beats">;
 
-/** Edit title/hook/vo_text/caption_text/cta/beats; submits only changed fields as the patch. */
-export function ScriptEditor({ script, busy, onSubmit, onCancel }: Props) {
+/** Edit title/hook/vo_text/caption_text/cta/beats and the shot prompts; submits only changed fields. */
+export function ScriptEditor({ script, shots = [], busy, onSubmit, onCancel }: Props) {
+  const initialShots = shots.map((s) => ({ prompt: s.prompt, duration: s.duration }));
+  const [shotDraft, setShotDraft] = useState(initialShots);
   const [draft, setDraft] = useState<Editable>({
     title: script.title,
     hook: script.hook,
@@ -31,11 +34,13 @@ export function ScriptEditor({ script, busy, onSubmit, onCancel }: Props) {
       draft.beats.map((x, j) => (j === i ? { ...x, ...b } : x)),
     );
 
-  const patch: Partial<Script> = {};
+  const patch: ScriptPatch = {};
   (["title", "hook", "vo_text", "caption_text", "cta"] as const).forEach((k) => {
     if (draft[k] !== script[k]) patch[k] = draft[k];
   });
   if (JSON.stringify(draft.beats) !== JSON.stringify(script.beats)) patch.beats = draft.beats;
+  if (JSON.stringify(shotDraft) !== JSON.stringify(initialShots)) patch.shots = shotDraft;
+  const shotsValid = !shots.length || (shotDraft.length >= 3 && shotDraft.length <= 6 && shotDraft.every((s) => s.prompt.trim()));
   const changed = Object.keys(patch);
   const words = draft.vo_text.trim().split(/\s+/).filter(Boolean).length;
   // ~2.6 spoken words per second is a typical short-form VO pace.
@@ -46,7 +51,7 @@ export function ScriptEditor({ script, busy, onSubmit, onCancel }: Props) {
       className="form script-editor"
       onSubmit={(e) => {
         e.preventDefault();
-        if (changed.length && draft.beats.length > 0) onSubmit(patch, note);
+        if (changed.length && draft.beats.length > 0 && shotsValid) onSubmit(patch, note);
       }}
       onKeyDown={(e) => {
         if (e.key === "Escape") onCancel();
@@ -125,6 +130,50 @@ export function ScriptEditor({ script, busy, onSubmit, onCancel }: Props) {
         </div>
       </fieldset>
 
+      {shots.length > 0 && (
+        <fieldset className="field">
+          <legend className="field-label">
+            Shots
+            <span className={`field-hint ${shotsValid ? "" : "tone-text-warn"}`}>
+              {shotDraft.length} of 3–6 · each prompt becomes one generated scene
+            </span>
+          </legend>
+          <div className="beats-edit">
+            {shotDraft.map((s, i) => (
+              <div className="shot-row" key={i}>
+                <span className="shot-num tabular" aria-hidden>
+                  #{i + 1}
+                </span>
+                <textarea
+                  rows={2}
+                  aria-label={`Shot ${i + 1} prompt`}
+                  value={s.prompt}
+                  placeholder="Subject, action, setting, camera, lighting…"
+                  onChange={(e) => setShotDraft((d) => d.map((x, j) => (j === i ? { ...x, prompt: e.target.value } : x)))}
+                />
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label={`Remove shot ${i + 1}`}
+                  disabled={shotDraft.length <= 3}
+                  onClick={() => setShotDraft((d) => d.filter((_, j) => j !== i))}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={shotDraft.length >= 6}
+              onClick={() => setShotDraft((d) => [...d, { prompt: "", duration: d[d.length - 1]?.duration ?? 6 }])}
+            >
+              <Plus size={14} /> Add shot
+            </button>
+          </div>
+        </fieldset>
+      )}
+
       <label className="field">
         <span className="field-label">Note for the log (optional)</span>
         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why the edit?" />
@@ -133,11 +182,12 @@ export function ScriptEditor({ script, busy, onSubmit, onCancel }: Props) {
       <div className="form-actions">
         <span className="muted small grow">
           {changed.length ? `Changed: ${changed.join(", ")}` : "No changes yet"} · re-renders from TTS
+          {patch.shots ? " · changed shots are generated (and billed) again" : ""}
         </span>
         <button type="button" className="btn btn-ghost" onClick={onCancel}>
           Cancel
         </button>
-        <button type="submit" className="btn btn-primary" disabled={!changed.length || busy}>
+        <button type="submit" className="btn btn-primary" disabled={!changed.length || !shotsValid || busy}>
           {busy && <Spinner size={15} />} Send edit
         </button>
       </div>

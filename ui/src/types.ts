@@ -141,10 +141,13 @@ export interface PostRecord {
   metadata: Record<string, unknown>;
 }
 
+/** Edit patch: changed Script fields, plus optionally the full new shot list (3–6 prompts). */
+export type ScriptPatch = Partial<Script> & { shots?: { prompt: string; duration?: number }[] };
+
 export interface ApprovalDecision {
   decision: Decision;
   stage?: RegenStage;
-  patch?: Partial<Script>;
+  patch?: ScriptPatch;
   note?: string;
   reviewer?: string;
 }
@@ -280,6 +283,7 @@ export interface QueueItem {
   qa: QAReport | null;
   script: Script | null;
   vo?: VoiceOver | null;
+  shot_list?: { shots: Shot[] } | null;
   preview_url: string | null;
   cost_total: number;
   budget: number;

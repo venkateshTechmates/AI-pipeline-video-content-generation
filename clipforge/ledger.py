@@ -57,6 +57,7 @@ PRICES: dict[str, float] = {
     "fake:music": 0.0,
     "fake:publish": 0.0,
     "fake": 0.0,
+    "local:animation": 0.0,
 }
 
 

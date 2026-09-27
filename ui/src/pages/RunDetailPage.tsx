@@ -217,7 +217,7 @@ export function RunDetailPage() {
             <div className="strong">This run is waiting for your review</div>
             <div className="muted small">Approve to generate metadata and publish, or send it back.</div>
           </div>
-          <DecisionBar script={script} onDecide={decide} />
+          <DecisionBar script={script} shots={state.shot_list?.shots} onDecide={decide} />
         </div>
       )}
 
