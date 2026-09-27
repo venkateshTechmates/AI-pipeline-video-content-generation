@@ -38,12 +38,12 @@ class Providers:
 
 def build_providers(settings: Settings, repo: Repo, store: AssetStore) -> Providers:
     if settings.provider_mode == "fake":
-        providers = fake_providers(store, settings.x264_preset)
+        providers = fake_providers(store, settings.x264_preset, settings.demo_video_style)
         if settings.renderer == "remotion":  # exercise the real render workers with fake inputs
             from .render import RemotionRenderer
 
             providers.renderer = RemotionRenderer(repo)
-        return providers
+        return _with_local_tts(settings, providers)
 
     from .fal import FalVideo
     from .music import EpidemicMusic, LibraryMusic
@@ -77,7 +77,7 @@ def build_providers(settings: Settings, repo: Repo, store: AssetStore) -> Provid
         tts.append(ElevenLabsTTS(settings.elevenlabs_api_key))
     if settings.openai_api_key:
         tts.append(OpenAITTS(settings.openai_api_key))
-    if not tts:
+    if not tts and settings.tts_provider != "espeak":
         raise RuntimeError("no TTS provider configured (ELEVENLABS_API_KEY / OPENAI_API_KEY)")
 
     music: list[MusicSource] = []
@@ -107,17 +107,26 @@ def build_providers(settings: Settings, repo: Repo, store: AssetStore) -> Provid
         publishers["fake"] = fake.FakePublisher()  # dry-run publishing
         metrics["fake"] = fake.FakeMetrics()
 
-    return Providers(video={Tier.economy: economy, Tier.premium: premium or economy}, tts=tts, music=music,
-                     renderer=renderer, publishers=publishers, metrics=metrics)
+    return _with_local_tts(settings, Providers(
+        video={Tier.economy: economy, Tier.premium: premium or economy}, tts=tts, music=music,
+        renderer=renderer, publishers=publishers, metrics=metrics))
 
 
-def fake_providers(store: AssetStore, preset: str = "medium") -> Providers:
+def _with_local_tts(settings: Settings, providers: Providers) -> Providers:
+    if settings.tts_provider == "espeak":
+        from .tts import EspeakTTS
+
+        providers.tts.insert(0, EspeakTTS())
+    return providers
+
+
+def fake_providers(store: AssetStore, preset: str = "medium", style: str = "testsrc") -> Providers:
     from .render import FfmpegRenderer
 
-    kling = fake.FakeVideo("fake:kling")
+    kling = fake.FakeVideo("fake:kling", style=style)
     return Providers(
-        video={Tier.economy: [kling, fake.FakeVideo("fake:seedance")],
-               Tier.premium: [fake.FakeVideo("fake:veo", durations=(4.0, 6.0, 8.0)), kling]},
+        video={Tier.economy: [kling, fake.FakeVideo("fake:seedance", style=style)],
+               Tier.premium: [fake.FakeVideo("fake:veo", durations=(4.0, 6.0, 8.0), style=style), kling]},
         tts=[fake.FakeTTS()],
         music=[fake.FakeMusic()],
         renderer=FfmpegRenderer(store, preset),

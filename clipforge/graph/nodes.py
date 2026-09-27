@@ -93,7 +93,9 @@ class StageCtx:
             self.providers.append(provider)
 
     async def charge_llm(self, tokens: int) -> None:
-        prov = f"{self.deps.settings.llm_model.split(':')[0]}:llm"
+        st = self.deps.settings
+        offline = (st.llm_mode or st.provider_mode) == "fake"
+        prov = "fake:llm" if offline else f"{st.llm_model.split(':')[0]}:llm"
         if tokens:
             await self.charge(prov, tokens / 1_000_000)
         elif prov not in self.providers:  # offline fakes: record who ran the stage even at $0

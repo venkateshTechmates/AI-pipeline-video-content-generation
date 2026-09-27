@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     google_api_key: str | None = None  # AI Studio (Gemini API) key for Veo
     gcs_output_uri: str | None = None
     elevenlabs_api_key: str | None = None
+    tts_provider: str | None = None  # "espeak" = local offline voice first in the TTS chain (demos)
     epidemic_api_key: str | None = None
     music_library_dir: Path | None = None  # local licensed library with manifest.json
     creatomate_api_key: str | None = None
@@ -57,6 +58,7 @@ class Settings(BaseSettings):
     renderer: str = "ffmpeg"  # ffmpeg | remotion | creatomate
     render_overflow_threshold: int = 20  # queued remotion jobs before overflowing to Creatomate
     x264_preset: str = "medium"  # ultrafast in tests
+    demo_video_style: str = "testsrc"  # offline clip look in PROVIDER_MODE=fake: testsrc | gradients | cosmic
     ffmpeg_bin: str = "ffmpeg"
     ffprobe_bin: str = "ffprobe"
 

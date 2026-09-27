@@ -29,8 +29,9 @@ def _seed(s: str) -> int:
 
 class FakeVideo:
     def __init__(self, name: str = "fake:video", fail_times: int = 0,
-                 durations: tuple[float, ...] | None = (5.0, 10.0)):
+                 durations: tuple[float, ...] | None = (5.0, 10.0), style: str = "testsrc"):
         self.name = name
+        self.style = style
         self.supported_durations = durations
         self.max_clip_seconds = max(durations) if durations else 10.0
         self.fail_times = fail_times  # simulate transient failures for retry/fallback tests
@@ -50,13 +51,30 @@ class FakeVideo:
             raise ProviderError(f"{self.name}: simulated failure {self.calls}")
         w, h = ASPECT_SIZE[req.aspect]
         w, h = w // 4, h // 4  # small & fast; renderer upscales
-        hue = _seed(req.prompt) % 360
+        seed = _seed(req.prompt)
+        hue = seed % 360
+        if self.style == "gradients":
+            palette = ["0x0f172a", "0x1d4ed8", "0x7c3aed", "0xdb2777", "0xf59e0b", "0x10b981", "0x06b6d4", "0x111827"]
+            cols = [palette[(seed >> (3 * i)) % len(palette)] for i in range(4)]
+            src = (f"gradients=s={w}x{h}:r=30:d={req.duration:.2f}:n=4:c0={cols[0]}:c1={cols[1]}:c2={cols[2]}:"
+                   f"c3={cols[3]}:speed=0.012:type={['linear', 'radial', 'circular', 'spiral'][seed % 4]}")
+            vf = "noise=alls=6:allf=t,format=yuv420p"
+        elif self.style == "cosmic":  # deep zoom into fractal tendrils, graded to glowing ember tones
+            src = (f"mandelbrot=s={w}x{h}:r=30:start_scale={0.02 + (seed % 7) * 0.004}:end_scale=0.0015:"
+                   f"start_x={-0.7453 - (seed % 11) * 2e-5}:start_y={0.1127 + (seed % 13) * 2e-5}:"
+                   f"maxiter=600:outer=normalized_iteration_count:inner=black,trim=duration={req.duration:.2f}")
+            tint = [(".45", ".12", "-.35"), (".15", "-.05", ".45"), (".40", ".30", "-.40")][seed % 3]
+            vf = (f"hue=s=0,curves=all='0/0 0.45/0.12 0.8/0.6 1/1',"
+                  f"colorbalance=rs={tint[0]}:gs={tint[1]}:bs={tint[2]}:rm={tint[0]}:gm={tint[1]}:bm={tint[2]},"
+                  "eq=contrast=1.25:saturation=1.6,vignette=PI/4,format=yuv420p")
+        else:
+            src = f"testsrc2=size={w}x{h}:rate=30:duration={req.duration:.2f}"
+            vf = f"hue=h={hue}:s=1.4,format=yuv420p"
         with tempfile.TemporaryDirectory() as d:
             out = Path(d) / "clip.mp4"
             await media.run([
-                media.ffmpeg(), "-y", "-f", "lavfi", "-i",
-                f"testsrc2=size={w}x{h}:rate=30:duration={req.duration:.2f}",
-                "-vf", f"hue=h={hue}:s=1.4,format=yuv420p", "-c:v", "libx264", "-preset", "ultrafast", str(out),
+                media.ffmpeg(), "-y", "-f", "lavfi", "-i", src,
+                "-vf", vf, "-c:v", "libx264", "-preset", "ultrafast", str(out),
             ])
             data = out.read_bytes()
         return VideoResult(data=data, duration=req.duration, model="testsrc2", billable_seconds=req.duration,
@@ -88,9 +106,12 @@ class FakeMusic:
         d = max(min_duration, 10)
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "music.mp3"
+            root = 196.0 * 2 ** ((_seed(mood) % 5) / 12)  # soft major-chord pad, root varies by mood
+            chord = "+".join(f"{a}*sin(2*PI*{root * r:.2f}*t)" for a, r in ((0.16, 1), (0.11, 1.26), (0.09, 1.5),
+                                                                          (0.05, 2)))
             await media.run([
-                media.ffmpeg(), "-y", "-f", "lavfi", "-i",
-                f"sine=frequency={330 + _seed(mood) % 200}:duration={d:.1f}", "-af", "volume=0.3",
+                media.ffmpeg(), "-y", "-f", "lavfi", "-i", f"aevalsrc='{chord}':s=44100:d={d:.1f}",
+                "-af", "tremolo=f=0.25:d=0.35,lowpass=f=1800,afade=t=in:d=1.5,volume=0.8",
                 "-c:a", "libmp3lame", "-b:a", "128k", str(out),
             ])
             data = out.read_bytes()

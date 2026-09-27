@@ -94,3 +94,30 @@ class OpenAITTS:
             dur = await media.duration(p)
         return TTSResult(audio=r.content, words=estimate_word_timings(text, dur - 0.1), characters=len(text),
                          duration=dur)
+
+
+class EspeakTTS:
+    """Local, offline TTS (espeak-ng) for demos and development: real speech, no API key.
+
+    espeak-ng gives no word timestamps, so timings are estimated over the measured audio length.
+    `voice_id` values that are not espeak voices fall back to `en-us`.
+    """
+
+    name = "espeak:tts"
+
+    def __init__(self, binary: str = "espeak-ng", speed_wpm: int = 165):
+        self.binary = binary
+        self.speed = speed_wpm
+
+    async def synthesize(self, text: str, voice_id: str) -> TTSResult:
+        voice = voice_id if len(voice_id) <= 12 and "-" in voice_id else "en-us+m3"
+        with tempfile.TemporaryDirectory() as d:
+            wav, mp3 = Path(d) / "vo.wav", Path(d) / "vo.mp3"
+            await media.run([self.binary, "-v", voice, "-s", str(self.speed), "-w", str(wav), text])
+            await media.run([media.ffmpeg(), "-y", "-i", str(wav), "-af", "silenceremove=start_periods=1:"
+                             "start_threshold=-50dB,areverse,silenceremove=start_periods=1:start_threshold=-50dB,"
+                             "areverse", "-c:a", "libmp3lame", "-b:a", "128k", str(mp3)])
+            dur = await media.duration(mp3)
+            audio = mp3.read_bytes()
+        return TTSResult(audio=audio, words=estimate_word_timings(text, dur - 0.05), characters=len(text),
+                         duration=dur)

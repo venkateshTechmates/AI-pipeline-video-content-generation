@@ -26,6 +26,10 @@ clipforge dev --runs 3           # API + embedded worker on :8000, demo brand + 
 cd ui && npm install && npm run dev   # review UI on :5173 (proxies /api -> :8000)
 ```
 
+For a nicer offline demo, set `DEMO_VIDEO_STYLE=gradients` (or `cosmic`) for animated backgrounds.
+Set `TTS_PROVIDER=espeak` for a real spoken voice through the local `espeak-ng` engine. Both are
+stand-ins for Kling video and ElevenLabs voice when you have no keys.
+
 Other entry points:
 
 ```bash
