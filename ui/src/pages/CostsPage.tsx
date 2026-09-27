@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { Coins, Gauge, ListVideo, Table2, Target } from "lucide-react";
+import { Coins, Gauge, ListVideo, Target } from "lucide-react";
 import { api } from "../api";
 import { STAGE_META } from "../components/icons";
 import { Card, EmptyState, ErrorBox, PageHeader, Segmented, Skeleton, StatTile } from "../components/ui";
@@ -253,7 +253,7 @@ function DayChartCard({
           onChange={setView}
           options={[
             { id: "chart", label: "Chart" },
-            { id: "table", label: <Table2 size={14} aria-label="Table" /> },
+            { id: "table", label: "Table" },
           ]}
         />
       }

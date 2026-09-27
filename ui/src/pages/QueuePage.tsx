@@ -42,18 +42,16 @@ export function QueuePage() {
   const idx = Math.min(focus, Math.max(0, items.length - 1));
   const current = items[idx];
 
-  // Keep the focused card in view (not on first render).
-  const mounted = useRef(false);
+  // Keep the focused card in view after keyboard navigation (not on load).
+  const moved = useRef(false);
   useEffect(() => {
-    if (!mounted.current) {
-      mounted.current = true;
-      return;
-    }
+    if (!moved.current) return;
+    moved.current = false;
     if (current && !wide) {
       const el = cardRefs.current.get(current.run.id);
       el?.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     }
-  }, [current?.run.id]);
+  }, [current?.run.id, wide]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -62,8 +60,10 @@ export function QueuePage() {
       if (!current) return;
       const bar = refs.current.get(current.run.id)?.current;
       const key = e.key.toLowerCase();
-      if (key === "j") setFocus(Math.min(items.length - 1, idx + 1));
-      else if (key === "k") setFocus(Math.max(0, idx - 1));
+      if (key === "j" || key === "k") {
+        moved.current = true;
+        setFocus(key === "j" ? Math.min(items.length - 1, idx + 1) : Math.max(0, idx - 1));
+      }
       else if (key === "a") bar?.approve();
       else if (key === "r") bar?.regenerate();
       else if (key === "e") bar?.edit();
@@ -277,7 +277,7 @@ function QueueCard({
           </span>
         </div>
 
-        <DecisionBar ref={barRef} script={script} onDecide={onDecide} showShortcuts={focused} block={!wide} />
+        <DecisionBar ref={barRef} script={script} onDecide={onDecide} showShortcuts={focused} block />
       </div>
     </article>
   );

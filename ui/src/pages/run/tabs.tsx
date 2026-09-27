@@ -260,7 +260,9 @@ export function PublishTab({ d }: { d: RunDetail }) {
       {platforms.map((p) => {
         const m = meta.find((x) => x.platform === p);
         const post = posts.find((x) => x.platform === p);
-        return <PlatformCard key={p} platform={p} meta={m} post={post} />;
+        // metadata.thumbnail_path is a storage key; resolve it via the run's asset list.
+        const thumb = m?.thumbnail_path ? d.assets.find((a) => a.storage_path === m.thumbnail_path)?.url : null;
+        return <PlatformCard key={p} platform={p} meta={m} post={post} thumb={thumb ?? null} />;
       })}
     </div>
   );
@@ -276,7 +278,17 @@ function CharCount({ n, limit }: { n: number; limit: number | null }) {
   );
 }
 
-function PlatformCard({ platform, meta, post }: { platform: PlatformMetadata["platform"]; meta?: PlatformMetadata; post?: PostRecord }) {
+function PlatformCard({
+  platform,
+  meta,
+  post,
+  thumb,
+}: {
+  platform: PlatformMetadata["platform"];
+  meta?: PlatformMetadata;
+  post?: PostRecord;
+  thumb: string | null;
+}) {
   const lim = PLATFORM_LIMITS[platform];
   const desc = meta ? [meta.description, meta.hashtags.map((h) => (h.startsWith("#") ? h : `#${h}`)).join(" ")].filter(Boolean).join("\n\n") : "";
   return (
@@ -301,6 +313,12 @@ function PlatformCard({ platform, meta, post }: { platform: PlatformMetadata["pl
       </header>
       {meta ? (
         <>
+          {thumb && (
+            <div className={`meta-thumb ar-${meta.aspect.replace(":", "x")}`}>
+              <img src={thumb} alt={`${PLATFORM_LABEL[platform]} thumbnail`} loading="lazy" />
+              <span className="meta-thumb-t tabular">{seconds(meta.thumbnail_time)}</span>
+            </div>
+          )}
           {meta.title && (
             <div className="meta-field">
               <div className="row between">

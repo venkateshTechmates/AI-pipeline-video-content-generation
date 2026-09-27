@@ -170,7 +170,7 @@ tests/            unit, API, end-to-end pipeline (fake providers), Postgres inte
 ## Tests
 
 ```bash
-pytest -q                                   # 41 tests; pipeline tests need ffmpeg (~4 min)
+pytest -q                                   # 43 tests; pipeline tests need ffmpeg (~5 min); Postgres tests need the env var below
 CLIPFORGE_TEST_DATABASE_URL=postgresql://... pytest tests/test_postgres.py
 ruff check clipforge tests
 ```

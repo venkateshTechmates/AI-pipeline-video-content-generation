@@ -199,7 +199,7 @@ export function RunDetailPage() {
         </div>
         <div className="summary-cell">
           <div className="eyebrow">Publish</div>
-          <div className="strong">{run.schedule ? dateTime(run.schedule) : "Next calendar slot"}</div>
+          <div className="strong">{publishLabel(d)}</div>
           {state.decision && (
             <div className="muted small">
               Last decision: {state.decision.decision}
@@ -246,6 +246,17 @@ export function RunDetailPage() {
       </div>
     </div>
   );
+}
+
+function publishLabel(d: RunDetail): string {
+  const published = d.posts.filter((p) => p.status === "published").length;
+  if (d.posts.length && published === d.posts.length) return `Published to ${published} platform${published === 1 ? "" : "s"}`;
+  const next = d.posts
+    .map((p) => p.scheduled_at)
+    .filter((x): x is string => !!x)
+    .sort()[0];
+  if (next) return `Scheduled ${dateTime(next)}${published ? ` · ${published} live` : ""}`;
+  return d.run.schedule ? dateTime(d.run.schedule) : "Next calendar slot";
 }
 
 function DetailSkeleton() {

@@ -19,8 +19,8 @@
   --r-xl: 16px;
   --r-full: 999px;
 
-  --font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --fs-xs: 11px;
   --fs-sm: 12.5px;
   --fs-md: 14px;
@@ -1308,6 +1308,10 @@ textarea::placeholder {
   z-index: 2;
   pointer-events: none;
 }
+.phone video {
+  position: absolute;
+  inset: 0;
+}
 .phone video,
 .video-box video {
   width: 100%;
@@ -1720,10 +1724,13 @@ textarea::placeholder {
 }
 .decision-block {
   display: grid;
-  grid-template-columns: 1.3fr 1.25fr 1fr 1fr;
+  grid-template-columns: 1.3fr 1fr 1fr;
   margin-top: auto;
   padding-top: var(--s-3);
   border-top: 1px solid var(--border);
+}
+.decision-block .btn-approve {
+  grid-column: 1 / -1;
 }
 .decision-block .btn {
   width: 100%;
@@ -1733,7 +1740,8 @@ textarea::placeholder {
   display: block;
 }
 .decision-block .btn-approve {
-  height: 36px;
+  height: 40px;
+  font-size: 15px;
 }
 .decision-block .btn {
   height: 36px;
@@ -2681,9 +2689,9 @@ textarea::placeholder {
 .pf-x {
   --pf: #111;
 }
-:root[data-theme="dark"] .pf-badge.pf-tiktok,
-:root[data-theme="dark"] .pf-badge.pf-x {
-  box-shadow: inset 0 0 0 1px var(--border-strong);
+.pf-badge.pf-tiktok,
+.pf-badge.pf-x {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
 }
 .meta-field {
   display: flex;
@@ -3312,6 +3320,11 @@ a.lnode:hover {
   display: flex;
   flex-direction: column;
 }
+.brand-item .grow > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .brand-item:hover {
   background: var(--surface-hover);
 }
@@ -3517,7 +3530,7 @@ a.lnode:hover {
 
 @media (max-width: 860px) {
   .shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     background: none;
   }
   .sidebar {
@@ -3564,11 +3577,21 @@ a.lnode:hover {
   }
   .brand-switch select {
     min-width: 0;
-    width: 150px;
   }
   .spend-label,
-  .spend-budget {
+  .spend-budget,
+  .spend-track {
     display: none;
+  }
+  .topbar .grow {
+    display: none;
+  }
+  .brand-switch {
+    flex: 1;
+    min-width: 0;
+  }
+  .brand-switch select {
+    width: 100%;
   }
   .spend {
     padding: 6px 10px;
@@ -3638,13 +3661,12 @@ a.lnode:hover {
   .queue-grid {
     grid-template-columns: 1fr;
   }
-  .decision-block {
-    grid-template-columns: 1fr 1fr;
-  }
   .decision-block .btn-approve {
-    grid-column: 1 / -1;
     height: 44px;
     font-size: var(--fs-lg);
+  }
+  .decision-block .btn .kbd {
+    display: none;
   }
   .menu {
     position: fixed;
@@ -3660,8 +3682,8 @@ a.lnode:hover {
     border-left: 0;
     border-top: 1px solid var(--border);
   }
-  .run-title-row {
-    flex-direction: column;
+  .run-title-row h1 {
+    font-size: 21px;
   }
   .run-head .live-ind {
     margin-left: auto;
@@ -3794,4 +3816,33 @@ a.lnode:hover {
   .card {
     border: 1px solid CanvasText;
   }
+}
+
+.meta-thumb {
+  position: relative;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: #000;
+  max-height: 180px;
+  width: auto;
+  margin: 0;
+  align-self: flex-start;
+  height: 180px;
+  box-shadow: 0 0 0 1px var(--border);
+}
+.meta-thumb img {
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+  display: block;
+}
+.meta-thumb-t {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 1px 6px;
+  border-radius: var(--r-full);
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: var(--fs-xs);
 }
