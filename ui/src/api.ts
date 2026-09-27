@@ -4,6 +4,7 @@ import type {
   Brand,
   BrandCosts,
   BrandPatch,
+  LanguageInfo,
   QueueItem,
   Run,
   RunCreateBody,
@@ -87,6 +88,8 @@ export const api = {
   retry: (id: string) => request<{ status: string }>("POST", `/runs/${encodeURIComponent(id)}/retry`),
 
   brands: () => request<{ items: Brand[] }>("GET", "/brands"),
+
+  languages: () => request<{ items: LanguageInfo[] }>("GET", "/languages"),
 
   brand: (id: string) => request<Brand>("GET", `/brands/${encodeURIComponent(id)}`),
 

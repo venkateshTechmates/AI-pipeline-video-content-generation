@@ -55,7 +55,7 @@ class FfmpegRenderer:
         w, h = ASPECT_SIZE[aspect]
         with tempfile.TemporaryDirectory() as tmp:
             tmpd = Path(tmp)
-            ass = to_ass(spec.words, spec.caption_style, w, h)
+            ass = to_ass(spec.words, spec.caption_style, w, h, spec.language)
             if spec.brand.cta_text:
                 ass += _ass_cta(spec.brand.cta_text, max(0.0, spec.duration - 2.5), spec.duration, w, h,
                                 spec.brand.accent_color)

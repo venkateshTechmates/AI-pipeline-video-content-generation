@@ -231,3 +231,26 @@ async def test_premium_veo_runs_within_default_budget(app):
     assert r.tier == Tier.premium and 3.0 < r.cost_total <= 25.0
     state = await app.repo.get_run_state(run.id)
     assert {c["provider"] for c in state["clips"]} == {"fake:veo"}
+
+
+@pytest.mark.parametrize("language", ["ja", "hi"])
+async def test_multilingual_voice_captions_and_subtitles(app, language):
+    brand = Brand(name="ML", kit={"niche": "habits", "language": language, "subtitle_languages": ["en", "es"]})
+    await app.repo.upsert_brand(brand)
+    run = Run(brand_id=brand.id, brief="habits", language=language, subtitle_languages=["en", "es"])
+    await app.repo.create_run(run)
+    r = await execute(app, run)
+    assert r.status == RunStatus.awaiting_approval, r.error
+    st = await app.repo.get_run_state(run.id)
+    assert r.language == language and st["qa_report"]["passed"], st["qa_report"]
+    words = [w["word"] for w in st["vo"]["words"]]
+    if language == "ja":
+        assert all(len(w) <= 3 for w in words)  # character chunks, not whole sentences
+    assert {s["language"] for s in st["subtitles"]} == {language, "en", "es"}
+    main = next(s for s in st["subtitles"] if s["language"] == language)
+    srt = app.deps.store.local_path(main["srt"]).read_text()
+    assert srt.startswith("1\n00:00:00") and " --> " in srt
+    es = next(s for s in st["subtitles"] if s["language"] == "es")
+    vtt = app.deps.store.local_path(es["vtt"]).read_text()
+    assert vtt.startswith("WEBVTT") and "[es]" in vtt  # FakeLLM marks translations
+    assert srt.count(" --> ") == vtt.count(" --> ")  # translated cues keep the same timing

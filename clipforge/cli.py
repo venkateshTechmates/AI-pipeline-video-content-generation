@@ -41,7 +41,8 @@ async def _worker() -> None:
         await app.aclose()
 
 
-async def _run_once(brand_id: str | None, brief: str | None, approve: bool) -> None:
+async def _run_once(brand_id: str | None, brief: str | None, approve: bool, language: str | None = None,
+                    subtitles: list[str] | None = None) -> None:
     from .models import ApprovalDecision, Decision, Run, RunStatus
     from .orchestrator import create_app_state, execute
     from .seed import demo_brand
@@ -54,7 +55,8 @@ async def _run_once(brand_id: str | None, brief: str | None, approve: bool) -> N
             brand_id = brand.id
         brand = await app.repo.get_brand(brand_id)
         run = Run(brand_id=brand.id, brief=brief, tier=brand.tier, budget=brand.budget_per_run,
-                  platforms=brand.kit.platforms)
+                  platforms=brand.kit.platforms, language=language or brand.kit.language,
+                  subtitle_languages=subtitles if subtitles is not None else brand.kit.subtitle_languages)
         await app.repo.create_run(run)
         run = await execute(app, run)
         if run.status == RunStatus.awaiting_approval and approve:
@@ -157,6 +159,8 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("--brand")
     r.add_argument("--brief")
     r.add_argument("--approve", action="store_true", help="approve at the review gate and publish")
+    r.add_argument("--language", help="voice + caption language, e.g. es, hi, ja (default: brand kit)")
+    r.add_argument("--subtitles", help="comma-separated extra subtitle languages, e.g. en,es,fr")
     sub.add_parser("seed")
     c = sub.add_parser("cron")
     c.add_argument("job", choices=["calendar", "metrics", "refresh-tokens", "recover"])
@@ -174,7 +178,8 @@ def main(argv: list[str] | None = None) -> None:
         case "worker":
             asyncio.run(_worker())
         case "run":
-            asyncio.run(_run_once(args.brand, args.brief, args.approve))
+            subs = [s.strip() for s in args.subtitles.split(",") if s.strip()] if args.subtitles else None
+            asyncio.run(_run_once(args.brand, args.brief, args.approve, args.language, subs))
         case "seed":
             asyncio.run(_seed())
         case "cron":

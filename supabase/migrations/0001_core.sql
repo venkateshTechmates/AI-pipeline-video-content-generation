@@ -202,3 +202,7 @@ end $$;
 drop trigger if exists cost_ledger_rollup on cost_ledger;
 create trigger cost_ledger_rollup after insert on cost_ledger for each row execute function ledger_rollup();
 
+
+-- ------------------------------------------------------------------ multilingual (idempotent for existing DBs)
+alter table runs add column if not exists language text not null default 'en';
+alter table runs add column if not exists subtitle_languages text[] not null default '{}';

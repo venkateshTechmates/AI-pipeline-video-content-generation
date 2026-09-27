@@ -85,6 +85,27 @@ platform's limits, and posts past a platform's daily cap roll to the next calend
 but missing a required field, the run records a failed post with the reason and still publishes everywhere
 else. Connect the social accounts themselves in Upload-Post or Ayrshare.
 
+## Languages
+
+A run's **language** controls the script, the voice-over and the burned-in captions. It defaults to the
+brand kit's language; set it per brand on the Brands page, per run on the New run page, with
+`clipforge run --language hi`, or in `POST /runs {"language": "hi"}`. **Subtitle languages** add translated
+subtitle files (SRT and WebVTT) with the same cue timing as the narration. They are listed on the run's
+Preview tab, where the player offers them as CC tracks.
+
+Supported: English, Spanish, French, German, Portuguese, Italian, Dutch, Polish, Turkish, Russian,
+Ukrainian, Indonesian, Vietnamese, Hindi, Marathi, Bengali, Tamil, Telugu, Kannada, Malayalam, Arabic,
+Japanese, Korean, Chinese (Simplified) and Thai (`GET /languages`).
+
+- Claude writes the hook, script and captions natively in the language. Shot prompts stay in English,
+  which video models follow best.
+- ElevenLabs (multilingual v2, `language_code`), Gemini TTS and OpenAI TTS voice all of these languages.
+  Set a voice per language with `kit.voices = {"hi": "<voice id>"}`.
+- Captions switch to a Noto font that covers the script. Chinese, Japanese and Thai are captioned in
+  character chunks, since they don't put spaces between words. Arabic is laid out right to left.
+- The offline `TTS_PROVIDER=espeak` demo voice handles Latin scripts and Hindi well, but Japanese and
+  Chinese poorly. Use a real TTS provider for those.
+
 ## Architecture
 
 | Layer | Default | Fallbacks | Code |

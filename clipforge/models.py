@@ -99,6 +99,24 @@ STAGES: tuple[str, ...] = (
 )
 
 
+# --------------------------------------------------------------------------- languages
+
+
+def _check_language(code: str) -> str:
+    from .languages import get_language
+
+    return get_language(code).code
+
+
+def _check_languages(codes: list[str]) -> list[str]:
+    out: list[str] = []
+    for c in codes:
+        c = _check_language(c)
+        if c not in out:
+            out.append(c)
+    return out
+
+
 # --------------------------------------------------------------------------- brand kit
 
 
@@ -164,6 +182,23 @@ class BrandKit(BaseModel):
     # Cross-shot consistency: "reference" = image-to-video from reference_images[0];
     # "first_shot" = generate shot 0, then use its frame as the reference for the rest; "none" = text-to-video.
     consistency: Literal["reference", "first_shot", "none"] = "first_shot"
+    # Voice-over + burned-in caption language (ISO 639-1, see clipforge.languages) and extra subtitle files.
+    language: str = "en"
+    subtitle_languages: list[str] = Field(default_factory=list)
+    voices: dict[str, str] = Field(default_factory=dict)  # per-language voice ids; falls back to voice_id
+
+    @field_validator("language")
+    @classmethod
+    def _lang_ok(cls, v: str) -> str:
+        return _check_language(v)
+
+    @field_validator("subtitle_languages")
+    @classmethod
+    def _subs_ok(cls, v: list[str]) -> list[str]:
+        return _check_languages(v)
+
+    def voice_for(self, language: str) -> str:
+        return self.voices.get(language, self.voice_id)
 
 
 class Brand(BaseModel):
@@ -393,6 +428,18 @@ class RunCreate(BaseModel):
     schedule: datetime | None = None  # explicit publish time; else brand calendar
     platforms: list[Platform] | None = None
     budget: float | None = None
+    language: str | None = None  # voice + captions; defaults to the brand kit language
+    subtitle_languages: list[str] | None = None  # extra translated subtitle files
+
+    @field_validator("language")
+    @classmethod
+    def _lang_ok(cls, v: str | None) -> str | None:
+        return _check_language(v) if v else v
+
+    @field_validator("subtitle_languages")
+    @classmethod
+    def _subs_ok(cls, v: list[str] | None) -> list[str] | None:
+        return _check_languages(v) if v is not None else v
 
 
 class Run(BaseModel):
@@ -409,6 +456,8 @@ class Run(BaseModel):
     error: str | None = None
     attempts: int = 0
     pending_decision: dict[str, Any] | None = None  # approval decision waiting for the worker to resume
+    language: str = "en"
+    subtitle_languages: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 

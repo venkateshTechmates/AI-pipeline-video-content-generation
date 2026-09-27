@@ -2,7 +2,8 @@
 FROM python:3.12-slim-bookworm
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg fonts-inter fonts-dejavu-core ca-certificates \
+ && apt-get install -y --no-install-recommends ffmpeg fonts-inter fonts-dejavu-core fonts-noto-core fonts-noto-cjk \
+    espeak-ng ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

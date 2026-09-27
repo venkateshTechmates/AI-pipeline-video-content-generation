@@ -157,3 +157,20 @@ async def test_patch_brand_platforms_and_credentials(client, cf):
     d = client.get(f"/brands/{b.id}").json()
     assert d["credentials"]["ayrshare"] is True and "pk" not in json.dumps(d)
     assert (await cf.repo.get_brand(b.id)).budget_per_run == 4
+
+
+async def test_languages_and_run_language_defaults(client, cf):
+    langs = client.get("/languages").json()["items"]
+    assert {"code": "hi", "name": "Hindi", "native": "हिन्दी", "rtl": False} in langs
+    b = demo_brand()
+    await cf.repo.upsert_brand(b)
+    assert client.patch(f"/brands/{b.id}", json={"kit": {"language": "es", "subtitle_languages": ["en", "fr"]}}
+                        ).status_code == 200
+    rid = client.post("/runs", json={"brand_id": b.id}).json()["run_id"]
+    run = client.get(f"/runs/{rid}").json()["run"]
+    assert run["language"] == "es" and run["subtitle_languages"] == ["en", "fr"]
+    rid = client.post("/runs", json={"brand_id": b.id, "language": "ja", "subtitle_languages": []}).json()["run_id"]
+    run = client.get(f"/runs/{rid}").json()["run"]
+    assert run["language"] == "ja" and run["subtitle_languages"] == []
+    assert client.post("/runs", json={"brand_id": b.id, "language": "klingon"}).status_code == 422
+    assert client.patch(f"/brands/{b.id}", json={"kit": {"language": "xx"}}).status_code == 422

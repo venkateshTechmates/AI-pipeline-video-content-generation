@@ -19,6 +19,7 @@ from langgraph.types import Command, Send, interrupt
 
 from .. import media
 from ..agents.llm import LLMBackend
+from ..captions import segments_to_srt, segments_to_vtt, subtitle_segments
 from ..config import Settings
 from ..db import Repo
 from ..dedupe import filter_hooks
@@ -210,7 +211,8 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
 
         kept: list[tuple[Hook, float]] = []
         for attempt in range(2):
-            ideas, tok = await llm.ideate(brand.kit, state.get("brief"), texts, n=5 + 3 * attempt)
+            ideas, tok = await llm.ideate(brand.kit, state.get("brief"), texts, n=5 + 3 * attempt,
+                                          language=_lang(state))
             await ctx.charge_llm(tok)
             hook_vecs = await llm.embed([h.text for h in ideas.hooks])
             kept = filter_hooks(ideas.hooks, hook_vecs, vecs, brand.kit.banned_topics, settings.dedupe_threshold)
@@ -233,7 +235,8 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
         hook = Hook.model_validate(state["hook"])
         pkg: ScriptPackage | None = None
         for _ in range(2):
-            pkg, tok = await llm.script(brand.kit, hook, state.get("brief"), tier, chain[0].max_clip_seconds)
+            pkg, tok = await llm.script(brand.kit, hook, state.get("brief"), tier, chain[0].max_clip_seconds,
+                                        language=_lang(state))
             await ctx.charge_llm(tok)
             text = "\n".join([pkg.script.vo_text, *(s.prompt for s in pkg.shot_list.shots)])
             mod, tok = await llm.moderate_text(text, brand.kit.banned_topics)
@@ -257,7 +260,9 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
     async def tts(state: RunState, ctx: StageCtx):
         brand = await repo.get_brand(state["brand_id"])
         sc = Script.model_validate(state["script"])
-        res, prov = await with_fallback(providers.tts, lambda p: p.synthesize(sc.vo_text, brand.kit.voice_id))
+        lang = _lang(state)
+        res, prov = await with_fallback(
+            providers.tts, lambda p: p.synthesize(sc.vo_text, brand.kit.voice_for(lang), lang))
         await ctx.charge(prov.name, res.characters / 1000)
         with tempfile.TemporaryDirectory() as d:
             raw = Path(d) / f"raw.{res.format}"
@@ -442,6 +447,30 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
         track = MusicTrack(path=key, title=res.title, license_id=res.license_id, provider=prov.name, duck_db=-12.0)
         return {"music": track.model_dump(), "_output_ref": key}
 
+    async def make_subtitles(state: RunState, vo: VoiceOver, ctx: StageCtx) -> list[dict[str, Any]]:
+        """Subtitle files (SRT + WebVTT): the narration language from word timings, plus translations of the
+        same cues (same timing) for each requested subtitle language."""
+        lang = _lang(state)
+        segments = subtitle_segments(vo.words, 7, lang)
+        out = []
+        for target in [lang, *[x for x in state.get("subtitle_languages") or [] if x != lang]]:
+            if target == lang:
+                texts = [t for _, _, t in segments]
+            else:
+                texts, tok = await llm.translate([t for _, _, t in segments], lang, target)
+                await ctx.charge_llm(tok)
+            segs = [(a, b, t) for (a, b, _), t in zip(segments, texts, strict=True)]
+            item: dict[str, Any] = {"language": target, "translated": target != lang}
+            for ext, body in (("srt", segments_to_srt(segs)), ("vtt", segments_to_vtt(segs))):
+                data = body.encode()
+                sha = sha256_bytes(data)
+                key = content_key(state["run_id"], f"subtitles/{target}", sha, f".{ext}")
+                store.put_bytes(key, data, "text/vtt" if ext == "vtt" else "application/x-subrip")
+                await ctx.asset(f"subtitle_{ext}", key, sha, language=target)
+                item[ext] = key
+            out.append(item)
+        return out
+
     # ------------------------------------------------------------------ 6 render
     @tracked(deps, "render")
     async def render(state: RunState, ctx: StageCtx):
@@ -459,7 +488,7 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
                    for s in timeline],
             audio=RenderAudio(voice_path=vo.audio_path, music_path=m["path"] if m else None,
                               music_gain_db=m["duck_db"] if m else -12.0),
-            words=vo.words, caption_style=brand.kit.caption_style,
+            words=vo.words, caption_style=brand.kit.caption_style, language=_lang(state),
             brand=BrandOverlay(logo_path=brand.kit.logo_path, primary_color=brand.kit.colors.get("primary", "#111"),
                                accent_color=brand.kit.colors.get("accent", "#FFD400"),
                                font=brand.kit.fonts[0] if brand.kit.fonts else "Inter", cta_text=sc.cta),
@@ -477,7 +506,8 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
             await ctx.asset("render", o.path, sha, aspect=o.aspect.value, width=o.width, height=o.height,
                             duration=o.duration, renderer=result.renderer)
             renders.append(o.model_dump(mode="json"))
-        return {"renders": renders, "_output_ref": renders[0]["path"]}
+        subtitles = await make_subtitles(state, vo, ctx)
+        return {"renders": renders, "subtitles": subtitles, "_output_ref": renders[0]["path"]}
 
     # ------------------------------------------------------------------ 7 qa
     @tracked(deps, "qa")
@@ -549,7 +579,7 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
         brand = await repo.get_brand(state["brand_id"])
         sc = Script.model_validate(state["script"])
         platforms = [Platform(p) for p in state["platforms"]]
-        bundle, tok = await llm.metadata(brand.kit, sc, platforms)
+        bundle, tok = await llm.metadata(brand.kit, sc, platforms, language=_lang(state))
         await ctx.charge_llm(tok)
         by_p = {i.platform: i for i in bundle.items}
 
@@ -655,6 +685,10 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
         "collect_shots": collect_shots, "music": music, "render": render, "qa": qa, "approve": approve,
         "metadata": metadata, "publish": publish, "finalize": finalize,
     }
+
+
+def _lang(state: RunState) -> str:
+    return state.get("language") or "en"
 
 
 def build_timeline(infos: list[dict[str, Any]], total: float, provider: Any) -> list[dict[str, Any]]:

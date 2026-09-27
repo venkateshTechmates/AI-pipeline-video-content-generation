@@ -30,6 +30,8 @@ class RunState(TypedDict, total=False):
     tier: str
     brief: str | None
     platforms: list[str]
+    language: str
+    subtitle_languages: list[str]
     nonce: dict[str, int]  # bumped per regenerate(stage) to bust content-addressed caches
     rejected_hooks: list[str]
 
@@ -43,6 +45,7 @@ class RunState(TypedDict, total=False):
     clips: Annotated[list[dict], merge_clips]
     music: dict | None
     renders: list[dict]
+    subtitles: list[dict]  # [{language, srt, vtt, translated}]
     qa_report: dict
     decision: dict
     auto_approved: bool
@@ -58,7 +61,7 @@ STAGE_OUTPUTS: dict[str, list[str]] = {
     "tts": ["vo", "timeline"],
     "gen_shots": ["clips", "ref_frame"],
     "music": ["music"],
-    "render": ["renders"],
+    "render": ["renders", "subtitles"],
     "qa": ["qa_report"],
 }
 ORDER = ["ideate", "script", "tts", "gen_shots", "music", "render", "qa"]

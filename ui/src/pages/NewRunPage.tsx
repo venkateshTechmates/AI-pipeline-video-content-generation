@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { LanguagePicker, languageLabel, useLanguages } from "../components/LanguagePicker";
 import { useNavigate } from "react-router-dom";
 import { AlertTriangle, CalendarClock, Crown, Rocket, Zap } from "lucide-react";
 import { api } from "../api";
@@ -50,6 +51,9 @@ export function NewRunPage() {
   const [schedule, setSchedule] = useState("");
   const [budget, setBudget] = useState("");
   const [platforms, setPlatforms] = useState<Platform[]>([...ALL_PLATFORMS]);
+  const [language, setLanguage] = useState("en");
+  const [subtitles, setSubtitles] = useState<string[]>([]);
+  const langs = useLanguages();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -64,6 +68,8 @@ export function NewRunPage() {
     if (!brand) return;
     setTier(brand.tier);
     setPlatforms(brand.kit?.platforms?.length ? [...brand.kit.platforms] : [...ALL_PLATFORMS]);
+    setLanguage(brand.kit?.language ?? "en");
+    setSubtitles([...(brand.kit?.subtitle_languages ?? [])]);
     setBudget(String(brand.budget_per_run));
   }, [brand?.id]);
 
@@ -85,6 +91,8 @@ export function NewRunPage() {
         tier,
         schedule: when === "custom" ? localInputToIso(schedule) : undefined,
         platforms,
+        language,
+        subtitle_languages: subtitles,
         budget: budget && Number(budget) !== brand?.budget_per_run ? Number(budget) : undefined,
       });
       toast({ tone: "success", title: "Run started", body: "Follow it live on the run page." });
@@ -234,6 +242,14 @@ export function NewRunPage() {
               </div>
               {platforms.length === 0 && <span className="tone-text-danger small">Pick at least one platform.</span>}
             </fieldset>
+            <LanguagePicker
+              language={language}
+              subtitles={subtitles}
+              onChange={(l, s) => {
+                setLanguage(l);
+                setSubtitles(s);
+              }}
+            />
             <fieldset className="field">
               <legend className="field-label">Schedule</legend>
               <div className="sched-options">
@@ -277,6 +293,11 @@ export function NewRunPage() {
               <dt>Platforms</dt>
               <dd className="platform-row">
                 {platforms.length ? platforms.map((p) => <PlatformIcon key={p} platform={p} size={15} />) : "—"}
+              </dd>
+              <dt>Language</dt>
+              <dd>
+                {languageLabel(langs, language)}
+                {subtitles.length > 0 && <span className="muted small"> · subtitles {subtitles.join(", ")}</span>}
               </dd>
               <dt>Publish</dt>
               <dd className="inline-icon">

@@ -48,6 +48,7 @@ class RenderSpec(BaseModel):
     caption_style: CaptionStyle = Field(default_factory=CaptionStyle)
     brand: BrandOverlay = Field(default_factory=BrandOverlay)
     output_prefix: str  # storage key prefix, e.g. "runs/<run_id>/render"
+    language: str = "en"  # caption language: font fallback, no-space scripts, RTL (see clipforge.languages)
 
 
 class RenderResultItem(BaseModel):

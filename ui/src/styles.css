@@ -4034,3 +4034,45 @@ a.lnode:hover {
   color: var(--text-3);
   font-size: var(--fs-sm);
 }
+
+/* ------------------------------------------------------------------ languages */
+.language-picker {
+  display: grid;
+  gap: var(--s-3);
+}
+.lang-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lang-chip {
+  height: 30px;
+  padding: 0 11px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  transition: all var(--dur) var(--ease);
+}
+.lang-chip:hover {
+  border-color: var(--text-3);
+}
+.lang-chip.on {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.subtitle-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.subtitle-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

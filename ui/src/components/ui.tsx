@@ -169,6 +169,7 @@ export function PhoneFrame({
   autoPlay,
   videoRef,
   onTime,
+  tracks = [],
 }: {
   src: string | null | undefined;
   poster?: string;
@@ -177,6 +178,7 @@ export function PhoneFrame({
   autoPlay?: boolean;
   videoRef?: React.Ref<HTMLVideoElement>;
   onTime?: (t: number) => void;
+  tracks?: VideoTrack[];
 }) {
   return (
     <div className="phone">
@@ -193,8 +195,13 @@ export function PhoneFrame({
             loop={autoPlay}
             preload="metadata"
             aria-label={label ?? "9:16 preview"}
+            crossOrigin={tracks.length ? "anonymous" : undefined}
             onTimeUpdate={onTime ? (e) => onTime(e.currentTarget.currentTime) : undefined}
-          />
+          >
+            {tracks.map((tr) => (
+              <track key={tr.lang} kind="subtitles" src={tr.src} srcLang={tr.lang} label={tr.label} />
+            ))}
+          </video>
         ) : (
           <div className="video-empty">
             <span>No 9:16 render yet</span>
@@ -206,11 +213,39 @@ export function PhoneFrame({
   );
 }
 
-export function VideoBox({ src, aspect, label }: { src: string | null | undefined; aspect: string; label?: string }) {
+/** A subtitle track for <video> (WebVTT). */
+export interface VideoTrack {
+  lang: string;
+  label: string;
+  src: string;
+}
+
+export function VideoBox({
+  src,
+  aspect,
+  label,
+  tracks = [],
+}: {
+  src: string | null | undefined;
+  aspect: string;
+  label?: string;
+  tracks?: VideoTrack[];
+}) {
   return (
     <div className={`video-box ar-${aspect.replace(":", "x")}`}>
       {src ? (
-        <video src={src} controls playsInline preload="metadata" aria-label={label ?? `${aspect} render`} />
+        <video
+          src={src}
+          controls
+          playsInline
+          preload="metadata"
+          aria-label={label ?? `${aspect} render`}
+          crossOrigin={tracks.length ? "anonymous" : undefined}
+        >
+          {tracks.map((tr) => (
+            <track key={tr.lang} kind="subtitles" src={tr.src} srcLang={tr.lang} label={tr.label} />
+          ))}
+        </video>
       ) : (
         <div className="video-empty">No {aspect} render</div>
       )}

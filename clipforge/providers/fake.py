@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 
 from .. import media
-from ..captions import estimate_word_timings
+from ..captions import estimate_word_timings, tokenize
 from ..models import ASPECT_SIZE, PostMetrics, PostRecord
 from .base import (
     MusicResult,
@@ -85,8 +85,8 @@ class FakeTTS:
     name = "fake:tts"
     words_per_second = 2.6
 
-    async def synthesize(self, text: str, voice_id: str) -> TTSResult:
-        dur = max(1.0, len(text.split()) / self.words_per_second)
+    async def synthesize(self, text: str, voice_id: str, language: str = "en") -> TTSResult:
+        dur = max(1.0, len(tokenize(text, language)) / self.words_per_second)
         with tempfile.TemporaryDirectory() as d:
             out = Path(d) / "vo.mp3"
             # a modulated tone stands in for speech (non-silent so loudness checks work)
@@ -95,7 +95,8 @@ class FakeTTS:
                 "-af", "tremolo=f=5:d=0.7,volume=0.5", "-c:a", "libmp3lame", "-b:a", "128k", str(out),
             ])
             audio = out.read_bytes()
-        return TTSResult(audio=audio, words=estimate_word_timings(text, dur - 0.05), characters=len(text),
+        return TTSResult(audio=audio, words=estimate_word_timings(text, dur - 0.05, lang=language),
+                         characters=len(text),
                          duration=dur)
 
 

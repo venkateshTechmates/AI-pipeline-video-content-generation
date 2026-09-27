@@ -16,7 +16,9 @@ import httpx
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, BinaryContent, ModelRetry, RunContext
 
+from ..captions import joiner
 from ..config import Settings
+from ..languages import get_language, speech_seconds
 from ..models import Beat, BrandKit, Hook, Ideas, Platform, Script, ScriptPackage, Shot, ShotList, Tier
 from ..platforms import PLATFORM_LIMITS
 from ..ratelimit import bucket
@@ -48,20 +50,37 @@ class ScriptDeps(BaseModel):
     min_s: int = 30
     max_s: int = 60
     max_clip_seconds: float = 10
+    language: str = "en"
+
+
+class Translation(BaseModel):
+    lines: list[str]
 
 
 class LLMBackend(Protocol):
-    async def ideate(self, kit: BrandKit, brief: str | None, avoid: list[str], n: int = 5) -> tuple[Ideas, int]: ...
+    async def ideate(self, kit: BrandKit, brief: str | None, avoid: list[str], n: int = 5,
+                     language: str = "en") -> tuple[Ideas, int]: ...
     async def script(self, kit: BrandKit, hook: Hook, brief: str | None, tier: Tier,
-                     max_clip_seconds: float) -> tuple[ScriptPackage, int]: ...
+                     max_clip_seconds: float, language: str = "en") -> tuple[ScriptPackage, int]: ...
     async def metadata(self, kit: BrandKit, script: Script,
-                       platforms: list[Platform]) -> tuple[MetadataBundle, int]: ...
+                       platforms: list[Platform], language: str = "en") -> tuple[MetadataBundle, int]: ...
+    async def translate(self, lines: list[str], source: str, target: str) -> tuple[list[str], int]:
+        """Translate subtitle cues line-for-line (same count, same order)."""
+        ...
     async def moderate_text(self, text: str, banned: list[str]) -> tuple[ModerationResult, int]: ...
     async def moderate_frames(self, frames: list[Path], banned: list[str]) -> tuple[ModerationResult, int]: ...
     async def embed(self, texts: list[str]) -> list[list[float]]: ...
 
 
 # --------------------------------------------------------------------------- prompts
+
+
+def _lang_rule(code: str, what: str) -> str:
+    lang = get_language(code)
+    if lang.code == "en":
+        return ""
+    return (f"\nLANGUAGE: write {what} in {lang.name} ({lang.native}), natural and idiomatic for native "
+            f"speakers, not a literal translation.")
 
 
 def _kit_brief(kit: BrandKit) -> str:
@@ -139,17 +158,17 @@ class LLM:
         u = result.usage()
         return int((u.input_tokens or 0) + (u.output_tokens or 0))
 
-    async def ideate(self, kit, brief, avoid, n=5):
+    async def ideate(self, kit, brief, avoid, n=5, language="en"):
         agent = Agent(self.model, output_type=Ideas, system_prompt=IDEATE_SYS, retries=2)
         await bucket("anthropic").acquire()
         prompt = (f"{_kit_brief(kit)}\nBrief: {brief or 'pick the best topic for this niche today'}\n"
                   f"Recent hooks to avoid (last 90 days):\n- " + "\n- ".join(avoid[-60:] or ["(none)"])
-                  + f"\n\nReturn exactly {n} ranked hooks.")
+                  + f"\n\nReturn exactly {n} ranked hooks." + _lang_rule(language, "the hook texts"))
         r = await agent.run(prompt)
         return r.output, self._tokens(r)
 
-    async def script(self, kit, hook, brief, tier, max_clip_seconds):
-        deps = ScriptDeps(max_clip_seconds=max_clip_seconds)
+    async def script(self, kit, hook, brief, tier, max_clip_seconds, language="en"):
+        deps = ScriptDeps(max_clip_seconds=max_clip_seconds, language=language)
         sys = SCRIPT_SYS.format(min_s=deps.min_s, max_s=deps.max_s, min_w=int(deps.min_s * WORDS_PER_SECOND),
                                 max_w=int(deps.max_s * WORDS_PER_SECOND), max_clip=max_clip_seconds)
         agent = Agent(self.model, output_type=ScriptPackage, system_prompt=sys, deps_type=ScriptDeps, retries=3)
@@ -164,11 +183,13 @@ class LLM:
         await bucket("anthropic").acquire()
         prompt = (f"{_kit_brief(kit)}\nVisual style guidance: avoid {', '.join(kit.negative_prompts)}.\n"
                   f"Brief: {brief or '-'}\nHook: {hook.text}\nAngle: {hook.angle}\n"
-                  f"Tier: {tier.value} ({'longer single shots allowed' if tier == Tier.premium else 'max 10 s shots'})")
+                  f"Tier: {tier.value} ({'longer single shots allowed' if tier == Tier.premium else 'max 10 s shots'})"
+                  + _lang_rule(language, "title, hook, beats, vo_text, caption_text and cta (keep the shot "
+                                         "prompts in English for the video model)"))
         r = await agent.run(prompt, deps=deps)
         return r.output, self._tokens(r)
 
-    async def metadata(self, kit, script, platforms):
+    async def metadata(self, kit, script, platforms, language="en"):
         agent = Agent(self.model, output_type=MetadataBundle, system_prompt=METADATA_SYS, retries=2)
         limits = "\n".join(
             f"- {p.value}: title <= {PLATFORM_LIMITS[p].title} chars, description <= "
@@ -176,8 +197,26 @@ class LLM:
         await bucket("anthropic").acquire()
         r = await agent.run(
             f"{_kit_brief(kit)}\nBrand hashtags: {', '.join(kit.hashtags) or '-'}\nTitle: {script.title}\n"
-            f"Hook: {script.hook}\nNarration: {script.vo_text}\nCTA: {script.cta}\n\nPlatforms:\n{limits}")
+            f"Hook: {script.hook}\nNarration: {script.vo_text}\nCTA: {script.cta}\n\nPlatforms:\n{limits}"
+            + _lang_rule(language, "titles, descriptions and hashtags"))
         return r.output, self._tokens(r)
+
+    async def translate(self, lines, source, target):
+        src, tgt = get_language(source), get_language(target)
+        agent = Agent(self.model, output_type=Translation, retries=3, system_prompt=(
+            "You translate short-video subtitle cues. Keep the meaning, tone and brevity of each cue; "
+            "return exactly one translated cue per input cue, in the same order."))
+
+        @agent.output_validator
+        def _same_len(out: Translation) -> Translation:
+            if len(out.lines) != len(lines):
+                raise ModelRetry(f"return exactly {len(lines)} lines, got {len(out.lines)}")
+            return out
+
+        await bucket("anthropic").acquire()
+        numbered = "\n".join(f"{i + 1}. {line}" for i, line in enumerate(lines))
+        r = await agent.run(f"From {src.name} to {tgt.name} ({tgt.native}):\n{numbered}")
+        return r.output.lines, self._tokens(r)
 
     async def moderate_text(self, text, banned):
         agent = Agent(self.model, output_type=ModerationResult, system_prompt=MODERATION_SYS, retries=2)
@@ -207,11 +246,10 @@ class LLM:
 
 def validate_script(out: ScriptPackage, deps: ScriptDeps) -> list[str]:
     problems = []
-    words = len(out.script.vo_text.split())
-    spoken = words / WORDS_PER_SECOND
+    spoken = speech_seconds(out.script.vo_text, deps.language)
     total = out.shot_list.total_duration
     if not deps.min_s <= spoken <= deps.max_s + 2:
-        problems.append(f"vo_text has {words} words (~{spoken:.0f}s); need {deps.min_s}-{deps.max_s}s")
+        problems.append(f"vo_text reads in ~{spoken:.0f}s; need {deps.min_s}-{deps.max_s}s of narration")
     if abs(total - spoken) > max(4.0, 0.15 * spoken):
         problems.append(f"shot durations sum to {total:.1f}s but narration is ~{spoken:.1f}s")
     if not 3 <= len(out.shot_list.shots) <= 6:
@@ -234,13 +272,40 @@ def hash_embed(text: str, dims: int = 256) -> list[float]:
 # --------------------------------------------------------------------------- fake
 
 
+# Canned offline scripts so non-English runs exercise real scripts (tokenising, fonts, speech length).
+FAKE_SCRIPTS: dict[str, list[str]] = {
+    "es": ["¡Tres hábitos que cambian tus mañanas!", "Casi todos empiezan sin un plan y se cansan rápido.",
+           "Primero: empieza más pequeño de lo que crees, y hazlo cada día.",
+           "Segundo: mide un solo número, no diez, para ver tu progreso.",
+           "Tercero: une el nuevo hábito con algo que ya haces cada mañana.",
+           "Hazlo durante dos semanas y dejará de costarte esfuerzo.",
+           "Se vuelve parte de quien eres, no algo que te obligas a hacer.",
+           "Sígueme para más consejos cortos y prácticos."],
+    "hi": ["तीन आदतें जो आपकी सुबह बदल देंगी!", "ज़्यादातर लोग बिना योजना के शुरू करते हैं और जल्दी थक जाते हैं।",
+           "पहला: जितना सोचते हैं उससे छोटा शुरू करें, और रोज़ करें।",
+           "दूसरा: दस नहीं, सिर्फ़ एक चीज़ मापें, ताकि प्रगति साफ़ दिखे।",
+           "तीसरा: नई आदत को किसी ऐसी चीज़ से जोड़ें जो आप हर सुबह करते हैं।",
+           "दो हफ़्ते ऐसा करें, फिर यह मेहनत जैसा नहीं लगेगा।",
+           "यह आपकी पहचान बन जाती है, कोई मजबूरी नहीं।",
+           "ऐसे और आसान सुझावों के लिए फ़ॉलो करें।"],
+    "ja": ["朝を変える三つの習慣を、今日から試してみませんか！",
+           "多くの人は計画なしに始めて、三日目にはもう疲れてしまいます。",
+           "一つ目、思っているよりずっと小さく始めて、それを毎日必ず続けること。",
+           "二つ目、十個の目標ではなく一つの数字だけを記録して、進歩をはっきり見えるようにすること。",
+           "三つ目、新しい習慣を、毎朝もうしていることと組み合わせること。",
+           "これを二週間続ければ、もう努力だとは感じなくなります。",
+           "それは無理にやることではなく、あなた自身の一部になっていきます。",
+           "もっと短くて役立つコツが欲しい人は、フォローしてね。"],
+}
+
+
 class FakeLLM:
     """Deterministic, schema-valid outputs without network (tests / demos)."""
 
     def __init__(self, unsafe_words: tuple[str, ...] = ("gore", "nsfw")):
         self.unsafe_words = unsafe_words
 
-    async def ideate(self, kit, brief, avoid, n=5):
+    async def ideate(self, kit, brief, avoid, n=5, language="en"):
         topic = brief or kit.niche
         base = [
             f"3 {topic} mistakes everyone makes",
@@ -254,8 +319,8 @@ class FakeLLM:
                  for i, t in enumerate(base[: max(n, 1) + 1])]
         return Ideas(hooks=hooks), 0
 
-    async def script(self, kit, hook, brief, tier, max_clip_seconds):
-        sentences = [
+    async def script(self, kit, hook, brief, tier, max_clip_seconds, language="en"):
+        sentences = FAKE_SCRIPTS.get(language) or [
             hook.text + "!",
             "Most people jump in without a plan and burn out fast.",
             "Here is the first fix: start smaller than you think, and make it daily.",
@@ -265,8 +330,8 @@ class FakeLLM:
             "It becomes who you are, not something you force yourself to do.",
             "Follow for more short, practical tips like this one.",
         ]
-        vo = " ".join(sentences)
-        spoken = len(vo.split()) / WORDS_PER_SECOND
+        vo = joiner(language).join(sentences)
+        spoken = speech_seconds(vo, language)
         n = 4
         per = round(spoken / n, 2)
         shots = [Shot(index=i, prompt=f"Cinematic vertical b-roll {i + 1} about {hook.text}", duration=per)
@@ -275,13 +340,14 @@ class FakeLLM:
             title=hook.text[:90], hook=hook.text,
             beats=[Beat(text=sentences[0], purpose="hook"), Beat(text=sentences[1], purpose="setup"),
                    *[Beat(text=s, purpose="value") for s in sentences[2:5]],
-                   Beat(text=" ".join(sentences[5:7]), purpose="payoff"), Beat(text=sentences[7], purpose="cta")],
+                   Beat(text=joiner(language).join(sentences[5:7]), purpose="payoff"),
+                   Beat(text=sentences[7], purpose="cta")],
             vo_text=vo, caption_text=vo, cta=sentences[-1], mood=(kit.music_moods or ["upbeat"])[0],
             target_seconds=max(30, min(60, round(spoken))),
         )
         return ScriptPackage(script=script, shot_list=ShotList(shots=shots)), 0
 
-    async def metadata(self, kit, script, platforms):
+    async def metadata(self, kit, script, platforms, language="en"):
         items = [PlatformCopy(platform=p, title=script.title,
                               description=f"{script.hook} {script.cta}",
                               hashtags=(kit.hashtags or []) + ["shorts", kit.niche.replace(" ", "")])
@@ -294,6 +360,9 @@ class FakeLLM:
 
     async def moderate_frames(self, frames, banned):
         return ModerationResult(safe=True), 0
+
+    async def translate(self, lines, source, target):
+        return [f"[{target}] {line}" for line in lines], 0
 
     async def embed(self, texts):
         return [hash_embed(t) for t in texts]

@@ -166,6 +166,8 @@ export interface Run {
   error: string | null;
   attempts: number;
   pending_decision: ApprovalDecision | null;
+  language: string;
+  subtitle_languages: string[];
   created_at: string;
   updated_at: string;
 }
@@ -243,6 +245,9 @@ export interface BrandKit {
   disclosure: { default: boolean; per_platform: Partial<Record<Platform, boolean>> };
   platforms: Platform[];
   platform_options?: Partial<Record<Platform, Record<string, string>>>;
+  language?: string;
+  subtitle_languages?: string[];
+  voices?: Record<string, string>;
   hashtags: string[];
   consistency: "reference" | "first_shot" | "none";
 }
@@ -342,7 +347,28 @@ export interface RunState {
   auto_approved?: boolean;
   renders: RenderInfo[];
   clips: ClipInfo[];
+  subtitles?: SubtitleTrack[];
+  language?: string;
 }
+
+export interface SubtitleTrack {
+  language: string;
+  translated: boolean;
+  srt: string;
+  vtt: string;
+  srt_url: string | null;
+  vtt_url: string | null;
+}
+
+export interface LanguageInfo {
+  code: string;
+  name: string;
+  native: string;
+  rtl: boolean;
+}
+
+/** Scripts written without spaces between words (mirrors clipforge/languages.py). */
+export const UNSPACED_LANGUAGES = ["ja", "zh", "th"];
 
 export interface RunDetail {
   run: Run;
@@ -360,6 +386,8 @@ export interface RunCreateBody {
   schedule?: string;
   platforms?: Platform[];
   budget?: number;
+  language?: string;
+  subtitle_languages?: string[];
 }
 
 export interface CostDay {

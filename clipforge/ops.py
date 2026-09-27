@@ -26,6 +26,7 @@ async def schedule_calendar_runs(app: App, window: timedelta = timedelta(minutes
             if at in existing:
                 continue
             run = Run(brand_id=brand.id, tier=brand.tier, budget=brand.budget_per_run, schedule=at,
+                      language=brand.kit.language, subtitle_languages=brand.kit.subtitle_languages,
                       platforms=[p for p in platforms if p in brand.kit.platforms] or platforms)
             await app.repo.create_run(run)
             created += 1

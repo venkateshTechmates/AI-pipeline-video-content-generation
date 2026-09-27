@@ -9,14 +9,18 @@ from pathlib import Path
 import httpx
 
 from .. import media
-from ..captions import estimate_word_timings
+from ..captions import estimate_word_timings, tokenize
+from ..languages import get_language
 from ..models import WordTiming
 from ..ratelimit import bucket
 from .base import ProviderError, TTSResult
 
 
-def chars_to_words(chars: list[str], starts: list[float], ends: list[float]) -> list[WordTiming]:
-    """Collapse ElevenLabs character alignment into word timings."""
+def chars_to_words(chars: list[str], starts: list[float], ends: list[float],
+                   language: str = "en") -> list[WordTiming]:
+    """Collapse ElevenLabs character alignment into word timings (character chunks for unspaced scripts)."""
+    if not get_language(language).spaced:
+        return _chunk_chars(chars, starts, ends, language)
     words: list[WordTiming] = []
     buf, w_start, w_end = "", None, 0.0
     for ch, s, e in zip(chars, starts, ends, strict=False):
@@ -34,6 +38,21 @@ def chars_to_words(chars: list[str], starts: list[float], ends: list[float]) -> 
     return words
 
 
+def _chunk_chars(chars: list[str], starts: list[float], ends: list[float], language: str) -> list[WordTiming]:
+    """Map caption tokens (tokenize) back onto per-character timings."""
+    text = "".join(chars)
+    out: list[WordTiming] = []
+    pos = 0
+    for tok in tokenize(text, language):
+        i = text.find(tok, pos)
+        if i < 0:
+            continue
+        j = i + len(tok) - 1
+        out.append(WordTiming(word=tok, start=round(starts[i], 3), end=round(ends[min(j, len(ends) - 1)], 3)))
+        pos = j + 1
+    return out
+
+
 class ElevenLabsTTS:
     name = "elevenlabs:tts"
 
@@ -43,13 +62,13 @@ class ElevenLabsTTS:
         self.model_id = model_id
         self.client = client or httpx.AsyncClient(timeout=180)
 
-    async def synthesize(self, text: str, voice_id: str) -> TTSResult:
+    async def synthesize(self, text: str, voice_id: str, language: str = "en") -> TTSResult:
         await bucket("elevenlabs").acquire()
         r = await self.client.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/with-timestamps",
             params={"output_format": "mp3_44100_128"},
             headers={"xi-api-key": self.api_key},
-            json={"text": text, "model_id": self.model_id,
+            json={"text": text, "model_id": self.model_id, "language_code": language,
                   "voice_settings": {"stability": 0.45, "similarity_boost": 0.8, "style": 0.3}},
         )
         if r.status_code in (400, 401, 422):
@@ -61,7 +80,7 @@ class ElevenLabsTTS:
         audio = base64.b64decode(j["audio_base64"])
         al = j.get("normalized_alignment") or j.get("alignment") or {}
         words = chars_to_words(al.get("characters", []), al.get("character_start_times_seconds", []),
-                               al.get("character_end_times_seconds", []))
+                               al.get("character_end_times_seconds", []), language)
         if not words:
             raise ProviderError("elevenlabs returned no alignment")
         return TTSResult(audio=audio, words=words, characters=len(text), duration=words[-1].end)
@@ -79,7 +98,7 @@ class OpenAITTS:
         self.model = model
         self.client = client or httpx.AsyncClient(timeout=180)
 
-    async def synthesize(self, text: str, voice_id: str) -> TTSResult:
+    async def synthesize(self, text: str, voice_id: str, language: str = "en") -> TTSResult:
         voice = voice_id if voice_id in self.VOICES else "nova"
         await bucket("openai").acquire()
         r = await self.client.post(
@@ -92,8 +111,8 @@ class OpenAITTS:
             p = Path(d) / "vo.mp3"
             p.write_bytes(r.content)
             dur = await media.duration(p)
-        return TTSResult(audio=r.content, words=estimate_word_timings(text, dur - 0.1), characters=len(text),
-                         duration=dur)
+        words = estimate_word_timings(text, dur - 0.1, lang=language)
+        return TTSResult(audio=r.content, words=words, characters=len(text), duration=dur)
 
 
 class EspeakTTS:
@@ -109,8 +128,10 @@ class EspeakTTS:
         self.binary = binary
         self.speed = speed_wpm
 
-    async def synthesize(self, text: str, voice_id: str) -> TTSResult:
-        voice = voice_id if len(voice_id) <= 12 and "-" in voice_id else "en-us+m3"
+    async def synthesize(self, text: str, voice_id: str, language: str = "en") -> TTSResult:
+        lang = get_language(language)
+        # a brand espeak voice (e.g. "en-us+m3") only applies to its own language
+        voice = voice_id if language == "en" and len(voice_id) <= 12 and "-" in voice_id else lang.espeak
         with tempfile.TemporaryDirectory() as d:
             wav, mp3 = Path(d) / "vo.wav", Path(d) / "vo.mp3"
             await media.run([self.binary, "-v", voice, "-s", str(self.speed), "-w", str(wav), text])
@@ -119,8 +140,8 @@ class EspeakTTS:
                              "areverse", "-c:a", "libmp3lame", "-b:a", "128k", str(mp3)])
             dur = await media.duration(mp3)
             audio = mp3.read_bytes()
-        return TTSResult(audio=audio, words=estimate_word_timings(text, dur - 0.05), characters=len(text),
-                         duration=dur)
+        words = estimate_word_timings(text, dur - 0.05, lang=language)
+        return TTSResult(audio=audio, words=words, characters=len(text), duration=dur)
 
 
 class GeminiTTS:
@@ -144,7 +165,7 @@ class GeminiTTS:
         self.style = style
         self.client = client or httpx.AsyncClient(timeout=180)
 
-    async def synthesize(self, text: str, voice_id: str) -> TTSResult:
+    async def synthesize(self, text: str, voice_id: str, language: str = "en") -> TTSResult:
         voice = voice_id if voice_id in self.VOICES else self.default_voice
         await bucket("vertex").acquire()
         r = await self.client.post(
@@ -178,5 +199,5 @@ class GeminiTTS:
                              "-c:a", "libmp3lame", "-b:a", "128k", str(mp3)])
             dur = await media.duration(mp3)
             audio = mp3.read_bytes()
-        return TTSResult(audio=audio, words=estimate_word_timings(text, dur - 0.05), characters=len(text),
-                         duration=dur)
+        words = estimate_word_timings(text, dur - 0.05, lang=language)
+        return TTSResult(audio=audio, words=words, characters=len(text), duration=dur)

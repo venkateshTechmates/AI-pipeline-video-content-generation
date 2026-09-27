@@ -100,6 +100,13 @@ def create_app(settings: Settings | None = None, app_state: App | None = None,
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
+    @api.get("/languages")
+    async def languages() -> dict[str, Any]:
+        from ..languages import LANGUAGES
+
+        return {"items": [{"code": lang.code, "name": lang.name, "native": lang.native, "rtl": lang.rtl}
+                          for lang in LANGUAGES.values()]}
+
     # ------------------------------------------------------------------ brands
     @api.get("/brands")
     async def list_brands(request: Request, p: Auth) -> dict[str, Any]:
@@ -199,7 +206,9 @@ def create_app(settings: Settings | None = None, app_state: App | None = None,
             raise HTTPException(404, "brand not found") from None
         run = Run(brand_id=brand.id, brief=body.brief, tier=body.tier or brand.tier,
                   budget=body.budget or brand.budget_per_run, schedule=body.schedule,
-                  platforms=body.platforms or brand.kit.platforms)
+                  platforms=body.platforms or brand.kit.platforms, language=body.language or brand.kit.language,
+                  subtitle_languages=(body.subtitle_languages if body.subtitle_languages is not None
+                                      else brand.kit.subtitle_languages))
         await cf(request).repo.create_run(run)
         return {"run_id": run.id}
 
@@ -222,6 +231,10 @@ def create_app(settings: Settings | None = None, app_state: App | None = None,
                                           "music", "decision", "auto_approved") if state.get(k) is not None}
         view["renders"] = [{**r, "url": with_url(request, r["path"])} for r in state.get("renders") or []]
         view["clips"] = [{**c, "url": with_url(request, c["path"])} for c in state.get("clips") or []]
+        view["subtitles"] = [
+            {**s, "srt_url": with_url(request, s.get("srt")), "vtt_url": with_url(request, s.get("vtt"))}
+            for s in state.get("subtitles") or []]
+        view["language"] = state.get("language") or run.language
         if view.get("metadata"):
             view["metadata"] = [{**m, "thumbnail_url": with_url(request, m.get("thumbnail_path"))}
                                 for m in view["metadata"]]

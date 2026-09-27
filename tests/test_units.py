@@ -122,7 +122,7 @@ def test_merge_clips_reducer():
     assert [c["index"] for c in a] == [0, 1]
     assert merge_clips(a, None) == []
     assert merge_clips(a, [RESET, {"index": 2}]) == [{"index": 2}]
-    assert set(clear_from("music")) == {"music", "renders", "qa_report"}
+    assert set(clear_from("music")) == {"music", "renders", "subtitles", "qa_report"}
 
 
 async def test_fake_script_is_valid():
@@ -310,3 +310,13 @@ def test_memory_due_metrics():
     p = PostRecord(run_id="r", platform=Platform.x, status="published", published_at=now - timedelta(hours=25))
     assert _due_metrics([(p, "b")], {}, now) == [(p, "b")]
     assert _due_metrics([(p, "b")], {p.id: [now]}, now) == []
+
+
+def test_tokenize_unspaced_scripts_keep_punctuation_with_previous_chunk():
+    from clipforge.captions import tokenize
+
+    toks = tokenize("みませんか！多くの人は、計画。", "ja")
+    assert "".join(toks) == "みませんか！多くの人は、計画。"
+    assert all(not t.startswith(("！", "、", "。")) for t in toks)
+    assert any(t.endswith("！") for t in toks) and toks[-1].endswith("。")
+    assert tokenize("Hola mundo, qué tal", "es") == ["Hola", "mundo,", "qué", "tal"]

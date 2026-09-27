@@ -1,8 +1,9 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { Captions, Download, Film, Music, Mic } from "lucide-react";
-import { Card, EmptyState, PhoneFrame, Segmented, VideoBox } from "../../components/ui";
+import { Captions, Download, Film, Languages, Music, Mic } from "lucide-react";
+import { languageLabel, useLanguages } from "../../components/LanguagePicker";
+import { Card, EmptyState, PhoneFrame, Segmented, VideoBox, type VideoTrack } from "../../components/ui";
 import { seconds } from "../../format";
-import type { AspectRatio, Brand, CaptionStyle, RunDetail, WordTiming } from "../../types";
+import { UNSPACED_LANGUAGES, type AspectRatio, type Brand, type CaptionStyle, type RunDetail, type WordTiming } from "../../types";
 
 export function PreviewTab({ d, brand }: { d: RunDetail; brand: Brand | null }) {
   const renders = d.state.renders ?? [];
@@ -16,6 +17,14 @@ export function PreviewTab({ d, brand }: { d: RunDetail; brand: Brand | null }) 
   const music = d.state.music;
   const clips = [...(d.state.clips ?? [])].sort((a, b) => a.shot_index - b.shot_index);
   const shots = d.state.shot_list?.shots ?? [];
+  const langs = useLanguages();
+  const language = d.state.language ?? d.run.language ?? "en";
+  const sep = UNSPACED_LANGUAGES.includes(language) ? "" : " ";
+  const subtitles = d.state.subtitles ?? [];
+  // the burned-in captions already show the narration language, so the player offers the translations
+  const tracks: VideoTrack[] = subtitles
+    .filter((s) => s.translated && s.vtt_url)
+    .map((s) => ({ lang: s.language, label: languageLabel(langs, s.language), src: s.vtt_url as string }));
 
   if (!renders.length && !clips.length)
     return (
@@ -43,9 +52,9 @@ export function PreviewTab({ d, brand }: { d: RunDetail; brand: Brand | null }) 
           >
             <div className={`player-stage ar-stage-${(cur?.aspect ?? "9:16").replace(":", "x")}`}>
               {cur?.aspect === "9:16" ? (
-                <PhoneFrame src={cur.url} videoRef={videoRef} onTime={setT} label="9:16 render" />
+                <PhoneFrame src={cur.url} videoRef={videoRef} onTime={setT} label="9:16 render" tracks={tracks} />
               ) : (
-                <VideoBox src={cur?.url} aspect={cur?.aspect ?? aspect} />
+                <VideoBox src={cur?.url} aspect={cur?.aspect ?? aspect} tracks={tracks} />
               )}
             </div>
             {cur && (
@@ -66,6 +75,38 @@ export function PreviewTab({ d, brand }: { d: RunDetail; brand: Brand | null }) 
       </div>
 
       <div className="preview-side">
+        {subtitles.length > 0 && (
+          <Card
+            title={
+              <span className="inline-icon">
+                <Languages size={15} aria-hidden /> Subtitles
+              </span>
+            }
+            actions={<span className="muted small">voice: {languageLabel(langs, language)}</span>}
+          >
+            <ul className="subtitle-list">
+              {subtitles.map((s) => (
+                <li key={s.language}>
+                  <span className="grow">
+                    {languageLabel(langs, s.language)}
+                    <span className="muted small"> · {s.translated ? "translated" : "narration"}</span>
+                  </span>
+                  {s.srt_url && (
+                    <a className="btn btn-ghost btn-sm" href={s.srt_url} download>
+                      <Download size={13} aria-hidden /> SRT
+                    </a>
+                  )}
+                  {s.vtt_url && (
+                    <a className="btn btn-ghost btn-sm" href={s.vtt_url} download>
+                      <Download size={13} aria-hidden /> VTT
+                    </a>
+                  )}
+                </li>
+              ))}
+            </ul>
+            {tracks.length > 0 && <p className="muted small">Translations are also selectable in the player's CC menu.</p>}
+          </Card>
+        )}
         {words.length > 0 && (
           <Card
             title={
@@ -75,7 +116,7 @@ export function PreviewTab({ d, brand }: { d: RunDetail; brand: Brand | null }) 
             }
             actions={<span className="muted small">{cur?.aspect === "9:16" ? "synced to player" : "switch to 9:16 to sync"}</span>}
           >
-            <CaptionPreview words={words} t={t} style={brand?.kit.caption_style} />
+            <CaptionPreview words={words} t={t} style={brand?.kit.caption_style} sep={sep} />
             <Transcript
               words={words}
               t={t}
@@ -186,7 +227,17 @@ function chunk(words: WordTiming[], n: number): WordTiming[][] {
   return out;
 }
 
-export function CaptionPreview({ words, t, style }: { words: WordTiming[]; t: number; style?: CaptionStyle }) {
+export function CaptionPreview({
+  words,
+  t,
+  style,
+  sep = " ",
+}: {
+  words: WordTiming[];
+  t: number;
+  style?: CaptionStyle;
+  sep?: string;
+}) {
   const n = Math.max(1, style?.words_per_line ?? 3);
   const lines = useMemo(() => chunk(words, n), [words, n]);
   const line =
@@ -210,7 +261,8 @@ export function CaptionPreview({ words, t, style }: { words: WordTiming[]; t: nu
             key={i}
             style={t >= w.start && t <= w.end ? { color: style?.highlight_color ?? "#FFD400" } : undefined}
           >
-            {w.word}{" "}
+            {w.word}
+            {sep}
           </span>
         ))}
       </div>

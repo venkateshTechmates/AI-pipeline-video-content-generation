@@ -70,7 +70,9 @@ class TTSResult(BaseModel):
 class TTS(Protocol):
     name: str
 
-    async def synthesize(self, text: str, voice_id: str) -> TTSResult: ...
+    async def synthesize(self, text: str, voice_id: str, language: str = "en") -> TTSResult:
+        """`language` is an ISO 639-1 code (see clipforge.languages); the text is already in it."""
+        ...
 
 
 # --------------------------------------------------------------------------- music

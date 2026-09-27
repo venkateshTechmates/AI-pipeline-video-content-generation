@@ -7,6 +7,7 @@ import { WEEKDAYS, money } from "../format";
 import { useAsync } from "../hooks";
 import { useBrandScope } from "../state";
 import { ALL_PLATFORMS, type Brand } from "../types";
+import { LanguageSettings } from "./brand/LanguageSettings";
 import { PlatformSettings } from "./brand/PlatformSettings";
 
 export function BrandsPage() {
@@ -223,6 +224,7 @@ function BrandDetail({ id }: { id: string }) {
         </Card>
       </div>
 
+      <LanguageSettings brand={brand} onSaved={(saved) => b.setData(saved)} />
       <PlatformSettings brand={brand} onSaved={(saved) => b.setData(saved)} />
     </div>
   );
