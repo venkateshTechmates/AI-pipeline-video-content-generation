@@ -17,7 +17,7 @@ import httpx
 from langgraph.errors import GraphBubbleUp
 from langgraph.types import Command, Send, interrupt
 
-from .. import media
+from .. import media, tracing
 from ..agents.llm import LLMBackend
 from ..captions import segments_to_srt, segments_to_vtt, subtitle_segments
 from ..config import Settings
@@ -57,7 +57,6 @@ from ..render_spec import BrandOverlay, RenderAudio, RenderClip, RenderSpec
 from ..retry import PermanentError, retry_async, with_fallback
 from ..schedule import next_slot
 from ..storage import AssetStore, content_key, sha256_bytes, sha256_file
-from ..telemetry import span
 from ..timeline import plan_timeline
 from .state import RESET, RunState, clear_from
 
@@ -152,7 +151,7 @@ def tracked(deps: Deps, name: str):
             rec = await _stage_start(deps, run_id, name)
             ctx = StageCtx(deps, run_id, state["brand_id"], name)
             try:
-                with span(f"stage.{name}", run_id=run_id, brand_id=state["brand_id"], attempt=rec.attempt):
+                async with tracing.span(name, kind="stage", attempt=rec.attempt, language=state.get("language")):
                     out = await fn(state, ctx)
             except GraphBubbleUp:  # interrupt(): waiting for a human, not a failure
                 await _stage_end(deps, rec, StageStatus.pending, cost=ctx.cost)
@@ -262,7 +261,7 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
         sc = Script.model_validate(state["script"])
         lang = _lang(state)
         res, prov = await with_fallback(
-            providers.tts, lambda p: p.synthesize(sc.vo_text, brand.kit.voice_for(lang), lang))
+            providers.tts, lambda p: p.synthesize(sc.vo_text, brand.kit.voice_for(lang), lang), kind="tts")
         await ctx.charge(prov.name, res.characters / 1000)
         with tempfile.TemporaryDirectory() as d:
             raw = Path(d) / f"raw.{res.format}"
@@ -302,6 +301,7 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
         nonce = payload.get("nonce", 0)
         key, cache = clip_key(run_id, seg, seg.get("ref_image") or payload.get("ref_id"), tier, nonce)
         if store.exists(key):
+            tracing.event("cache_hit", key=key)
             meta = json.loads(store.local_path(key + ".json").read_text()) if store.exists(key + ".json") else {}
             return Clip(shot_index=seg["index"], path=key, duration=meta.get("duration", want),
                         provider=meta.get("provider", "cache"), model=meta.get("model", "")).model_dump() | {
@@ -321,9 +321,8 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
         async def call(p):
             return await p.generate(req.model_copy(update={"duration": min(req.duration, p.max_clip_seconds)}))
 
-        with span("gen_shot", run_id=run_id, index=seg["index"]):
-            res, prov = await with_fallback(chain, call, attempts_each=3,
-                                            base=0.01 if settings.provider_mode == "fake" else 1.0)
+        res, prov = await with_fallback(chain, call, attempts_each=3, kind="video",
+                                        base=0.01 if settings.provider_mode == "fake" else 1.0)
         data = await _fetch(res)
         store.put_bytes(key, data, "video/mp4")
         with tempfile.TemporaryDirectory() as d:
@@ -342,6 +341,11 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
 
     async def gen_shots(state: RunState):
         """Dispatcher: budget check (maybe downgrade tier), optional consistency frame, then parallel Send."""
+        async with tracing.span("gen_shots", kind="stage", trace_id=state["run_id"],
+                                shots=len(state.get("timeline") or [])):
+            return await _gen_shots(state)
+
+    async def _gen_shots(state: RunState):
         run_id = state["run_id"]
         rec = await _stage_start(deps, run_id, "gen_shots")
         try:
@@ -407,7 +411,10 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
 
     async def gen_shot(payload: dict[str, Any]):
         try:
-            return {"clips": [await generate_clip(payload)]}
+            async with tracing.span("gen_shot", kind="stage", trace_id=payload["run_id"],
+                                    shot_index=payload["segment"]["index"], prompt=payload["segment"]["prompt"],
+                                    seconds=payload["segment"].get("billed")):
+                return {"clips": [await generate_clip(payload)]}
         except Exception as e:
             rec = await repo.get_stage(payload["run_id"], "gen_shots")
             if rec:
@@ -416,6 +423,10 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
             raise
 
     async def collect_shots(state: RunState):
+        async with tracing.span("collect_shots", kind="stage", trace_id=state["run_id"]):
+            return await _collect_shots(state)
+
+    async def _collect_shots(state: RunState):
         run_id = state["run_id"]
         have = {c["index"] for c in state.get("clips") or []}
         want = {s["index"] for s in state["timeline"]}
@@ -437,7 +448,8 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
             return {"music": None}
         sc = Script.model_validate(state["script"])
         vo = VoiceOver.model_validate(state["vo"])
-        res, prov = await with_fallback(providers.music, lambda p: p.pick(sc.mood, vo.duration + VO_TAIL_S))
+        res, prov = await with_fallback(providers.music, lambda p: p.pick(sc.mood, vo.duration + VO_TAIL_S),
+                                        kind="music")
         data = await _fetch(res)
         sha = sha256_bytes(data)
         key = content_key(state["run_id"], "music", sha, "." + (res.format or "mp3"))
@@ -498,7 +510,9 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
         spec_hash = _stable_hash([spec.model_dump(mode="json"), nonce])[:16]
         spec.output_prefix = f"runs/{state['run_id']}/render/{spec_hash}"
         renderer = providers.renderer
-        result = await renderer.render(spec)
+        async with tracing.span(f"render:{renderer.name}", kind="render", renderer=renderer.name,
+                                aspects=len(spec.aspects), seconds=spec.duration, language=spec.language):
+            result = await renderer.render(spec)
         await ctx.charge(f"{result.renderer}:render", len(result.outputs) if result.renderer == "creatomate" else 0)
         renders = []
         for o in result.outputs:
@@ -644,8 +658,11 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
                 profile_key=profile_key, options=options,
             )
             try:
-                res = await retry_async(lambda req=req: publisher.publish(req), attempts=3,
-                                        base=0.01 if settings.provider_mode == "fake" else 2.0)
+                async with tracing.span(f"publish:{meta.platform.value}", kind="publish", provider=publisher.name,
+                                        platform=meta.platform.value,
+                                        scheduled_at=req.scheduled_at.isoformat() if req.scheduled_at else None):
+                    res = await retry_async(lambda req=req: publisher.publish(req), attempts=3,
+                                            base=0.01 if settings.provider_mode == "fake" else 2.0)
             except Exception as e:  # one platform failing must not block the others
                 log.error("publish %s failed: %s", meta.platform, e)
                 failures.append(f"{meta.platform.value}: {e}")

@@ -254,3 +254,27 @@ async def test_multilingual_voice_captions_and_subtitles(app, language):
     vtt = app.deps.store.local_path(es["vtt"]).read_text()
     assert vtt.startswith("WEBVTT") and "[es]" in vtt  # FakeLLM marks translations
     assert srt.count(" --> ") == vtt.count(" --> ")  # translated cues keep the same timing
+
+
+async def test_trace_spans_cover_the_run(app):
+    app.deps.providers.video[Tier.economy][0].fail_times = 1  # one retry on the first shot
+    run = await new_run(app, trust_score=99)
+    r = await execute(app, run)
+    assert r.status == RunStatus.published, r.error
+    spans = await app.repo.list_spans(run.id)
+    by_name = {}
+    for s in spans:
+        by_name.setdefault(s.name, []).append(s)
+    for n in ("run.execute", "ideate", "script", "tts", "gen_shots", "gen_shot", "collect_shots", "music",
+              "render", "qa", "approve", "metadata", "publish", "llm.script", "llm.moderate_text"):
+        assert n in by_name, n
+    root = by_name["run.execute"][0]
+    assert by_name["ideate"][0].parent_id == root.id
+    assert all(s.end_at and s.duration_ms is not None for s in spans)
+    video = [s for s in spans if s.kind == "video"]
+    shot_parents = {g.id for g in by_name["gen_shot"] + by_name["gen_shots"]}  # shot 0 runs in the dispatcher
+    assert video and all(s.parent_id in shot_parents for s in video)
+    assert any(s.status == "error" for s in video)  # the simulated failure is traced
+    assert any(e.name == "retry" for g in by_name["gen_shot"] + by_name["gen_shots"] for e in g.events)
+    assert {s.attributes["platform"] for s in spans if s.kind == "publish"} == {p.value for p in DEFAULT_PLATFORMS}
+    assert sum(float(s.attributes.get("cost_usd", 0)) for s in spans) == pytest.approx(r.cost_total, abs=0.01)

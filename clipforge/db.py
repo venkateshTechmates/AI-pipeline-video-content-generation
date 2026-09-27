@@ -89,6 +89,13 @@ class Repo(Protocol):
     async def expiring_credentials(self, before: datetime) -> list[tuple[str, str]]: ...
     async def stale_runs(self, older_than: datetime) -> list[Run]: ...
     async def user_org_ids(self, user_id: str) -> list[str]: ...
+    # tracing
+    async def upsert_span(self, span: Any) -> None: ...
+    async def list_spans(self, trace_id: str) -> list[Any]: ...
+    async def span_counts(self, trace_ids: list[str]) -> dict[str, dict[str, Any]]:
+        """trace_id -> {spans, errors, start, end}"""
+        ...
+    async def spans_between(self, start: datetime, end: datetime, brand_ids: list[str] | None) -> list[Any]: ...
     async def find_post_by_external(self, external_id: str) -> PostRecord | None: ...
     async def claim_runs(self, worker: str, limit: int = 1) -> list[Run]:
         """Atomically move queued / resume_requested runs to running for this worker."""
@@ -114,6 +121,7 @@ class MemoryRepo:
         self.webhooks: set[str] = set()
         self.credentials: dict[tuple[str, str], tuple[str, datetime | None]] = {}
         self.org_members: dict[str, set[str]] = defaultdict(set)
+        self.spans: dict[str, Any] = {}
 
     async def get_brand(self, brand_id: str) -> Brand:
         try:
@@ -276,6 +284,29 @@ class MemoryRepo:
 
     async def user_org_ids(self, user_id: str) -> list[str]:
         return [org for org, users in self.org_members.items() if user_id in users]
+
+    async def upsert_span(self, span: Any) -> None:
+        self.spans[span.id] = span.model_copy(deep=True)
+
+    async def list_spans(self, trace_id: str) -> list[Any]:
+        return sorted((s for s in self.spans.values() if s.trace_id == trace_id), key=lambda s: s.start_at)
+
+    async def span_counts(self, trace_ids: list[str]) -> dict[str, dict[str, Any]]:
+        out: dict[str, dict[str, Any]] = {}
+        for s in self.spans.values():
+            if s.trace_id not in trace_ids:
+                continue
+            c = out.setdefault(s.trace_id, {"spans": 0, "errors": 0, "start": s.start_at, "end": None})
+            c["spans"] += 1
+            c["errors"] += s.status == "error"
+            c["start"] = min(c["start"], s.start_at)
+            end = s.end_at or s.start_at
+            c["end"] = max(c["end"], end) if c["end"] else end
+        return out
+
+    async def spans_between(self, start: datetime, end: datetime, brand_ids: list[str] | None) -> list[Any]:
+        return [s for s in self.spans.values() if start <= s.start_at < end and (
+            brand_ids is None or (s.trace_id in self.runs and self.runs[s.trace_id].brand_id in brand_ids))]
 
     async def find_post_by_external(self, external_id: str) -> PostRecord | None:
         for p in self.posts.values():
@@ -657,6 +688,47 @@ class PostgresRepo:
     async def user_org_ids(self, user_id: str) -> list[str]:
         rows = await self._all("select org_id from org_members where user_id = %s", user_id)
         return [r["org_id"] for r in rows]
+
+    async def upsert_span(self, s: Any) -> None:
+        await self._one(
+            """insert into trace_spans (id, trace_id, parent_id, name, kind, status, start_at, end_at, duration_ms,
+                 attributes, events, error) values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               on conflict (id) do update set status=excluded.status, end_at=excluded.end_at,
+                 duration_ms=excluded.duration_ms, attributes=excluded.attributes, events=excluded.events,
+                 error=excluded.error""",
+            s.id, s.trace_id, s.parent_id, s.name, s.kind, s.status, s.start_at, s.end_at, s.duration_ms,
+            _j(s.attributes), _j([e.model_dump(mode="json") for e in s.events]), s.error)
+
+    @staticmethod
+    def _span(r: dict[str, Any]) -> Any:
+        from .tracing import Span
+
+        return Span(id=str(r["id"]), trace_id=str(r["trace_id"]), parent_id=str(r["parent_id"]) if r["parent_id"]
+                    else None, name=r["name"], kind=r["kind"], status=r["status"], start_at=r["start_at"],
+                    end_at=r["end_at"], duration_ms=r["duration_ms"], attributes=r["attributes"] or {},
+                    events=r["events"] or [], error=r["error"])
+
+    async def list_spans(self, trace_id: str) -> list[Any]:
+        rows = await self._all("select * from trace_spans where trace_id = %s order by start_at", trace_id)
+        return [self._span(r) for r in rows]
+
+    async def span_counts(self, trace_ids: list[str]) -> dict[str, dict[str, Any]]:
+        if not trace_ids:
+            return {}
+        rows = await self._all(
+            """select trace_id, count(*) n, count(*) filter (where status = 'error') e, min(start_at) s,
+                 max(coalesce(end_at, start_at)) f from trace_spans where trace_id = any(%s::uuid[])
+               group by trace_id""", trace_ids)
+        return {str(r["trace_id"]): {"spans": r["n"], "errors": r["e"], "start": r["s"], "end": r["f"]} for r in rows}
+
+    async def spans_between(self, start: datetime, end: datetime, brand_ids: list[str] | None) -> list[Any]:
+        q = """select s.* from trace_spans s join runs r on r.id = s.trace_id
+               where s.start_at >= %s and s.start_at < %s"""
+        args: list[Any] = [start, end]
+        if brand_ids is not None:
+            q += " and r.brand_id = any(%s::uuid[])"
+            args.append(brand_ids)
+        return [self._span(r) for r in await self._all(q + " order by s.start_at limit 100000", *args)]
 
     async def find_post_by_external(self, external_id: str) -> PostRecord | None:
         r = await self._one(

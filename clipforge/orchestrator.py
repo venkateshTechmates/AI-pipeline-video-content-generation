@@ -19,6 +19,7 @@ from typing import Any
 
 from langgraph.types import Command
 
+from . import tracing
 from .agents.llm import build_llm
 from .config import Settings, get_settings
 from .db import MemoryRepo, PostgresRepo, Repo
@@ -29,7 +30,7 @@ from .models import Run, RunStatus, utcnow
 from .providers.registry import build_providers
 from .retry import BudgetExceeded, PermanentError
 from .storage import build_store
-from .telemetry import setup_telemetry, span
+from .telemetry import setup_telemetry
 
 log = logging.getLogger(__name__)
 
@@ -74,8 +75,10 @@ async def create_app_state(settings: Settings | None = None, repo: Repo | None =
 
         checkpointer = InMemorySaver()
     store = build_store(settings)
+    tracing.set_tracer(tracing.Tracer(repo))
+    llm_model = "fake" if (settings.llm_mode or settings.provider_mode) == "fake" else settings.llm_model
     deps = Deps(settings=settings, repo=repo, store=store, providers=build_providers(settings, repo, store),
-                llm=build_llm(settings), ledger=CostLedger(repo, settings))
+                llm=tracing.TracingLLM(build_llm(settings), llm_model), ledger=CostLedger(repo, settings))
     return App(settings=settings, deps=deps, graph=build_graph(deps, checkpointer), _closers=closers)
 
 
@@ -101,7 +104,10 @@ async def execute(app: App, run: Run) -> Run:
                "subtitle_languages": run.subtitle_languages}
     await repo.update_run(run.id, status=RunStatus.running, error=None)
     try:
-        with span("run", run_id=run.id, brand_id=run.brand_id):
+        async with tracing.tracer().span(
+                "run.execute", kind="run", trace_id=run.id, brand_id=run.brand_id, tier=run.tier.value,
+                language=run.language, resume=not isinstance(inp, dict),
+                decision=(run.pending_decision or {}).get("decision"), attempt=run.attempts + 1):
             await app.graph.ainvoke(inp, cfg)
     except (BudgetExceeded, PermanentError) as e:
         log.error("run %s aborted: %s", run.id, e)

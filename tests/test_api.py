@@ -174,3 +174,39 @@ async def test_languages_and_run_language_defaults(client, cf):
     assert run["language"] == "ja" and run["subtitle_languages"] == []
     assert client.post("/runs", json={"brand_id": b.id, "language": "klingon"}).status_code == 422
     assert client.patch(f"/brands/{b.id}", json={"kit": {"language": "xx"}}).status_code == 422
+
+
+async def test_traces_api(client, cf):
+    from datetime import timedelta
+
+    from clipforge.models import utcnow
+    from clipforge.tracing import Span
+
+    b = demo_brand()
+    await cf.repo.upsert_brand(b)
+    run = Run(brand_id=b.id, brief="traced", status=RunStatus.published)
+    await cf.repo.create_run(run)
+    t0 = utcnow()
+    root = Span(trace_id=run.id, name="run.execute", kind="run", start_at=t0, end_at=t0 + timedelta(seconds=9),
+                duration_ms=9000)
+    stage = Span(trace_id=run.id, parent_id=root.id, name="gen_shot", kind="stage", start_at=t0,
+                 end_at=t0 + timedelta(seconds=5), duration_ms=5000)
+    ok = Span(trace_id=run.id, parent_id=stage.id, name="video:fal:kling-3.0", kind="video", start_at=t0,
+              end_at=t0 + timedelta(seconds=4), duration_ms=4000,
+              attributes={"provider": "fal:kling-3.0", "cost_usd": 0.42})
+    bad = Span(trace_id=run.id, parent_id=stage.id, name="video:fal:kling-3.0", kind="video", status="error",
+               start_at=t0, end_at=t0 + timedelta(seconds=1), duration_ms=1000, error="boom",
+               attributes={"provider": "fal:kling-3.0"})
+    for s in (root, stage, ok, bad):
+        await cf.repo.upsert_span(s)
+    items = client.get("/traces").json()["items"]
+    t = next(i for i in items if i["trace_id"] == run.id)
+    assert t["span_count"] == 4 and t["error_count"] == 1 and t["duration_ms"] == 9000 and t["brand_name"]
+    assert [i["trace_id"] for i in client.get("/traces", params={"status": "error"}).json()["items"]] == [run.id]
+    assert client.get("/traces", params={"q": "nomatch"}).json()["items"] == []
+    d = client.get(f"/traces/{run.id}").json()
+    assert [s["name"] for s in d["spans"]][:1] == ["run.execute"] and len(d["spans"]) == 4
+    st = client.get("/traces/stats").json()
+    prov = next(x for x in st["providers"] if x["name"] == "fal:kling-3.0")
+    assert prov["calls"] == 2 and prov["errors"] == 1 and prov["cost"] == 0.42 and prov["p95_ms"] > prov["p50_ms"]
+    assert any(x["name"] == "gen_shot" for x in st["stages"]) and st["throughput"][0]["runs"] >= 1

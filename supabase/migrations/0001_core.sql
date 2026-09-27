@@ -206,3 +206,21 @@ create trigger cost_ledger_rollup after insert on cost_ledger for each row execu
 -- ------------------------------------------------------------------ multilingual (idempotent for existing DBs)
 alter table runs add column if not exists language text not null default 'en';
 alter table runs add column if not exists subtitle_languages text[] not null default '{}';
+
+-- ------------------------------------------------------------------ tracing (tracing app)
+create table if not exists trace_spans (
+  id uuid primary key,
+  trace_id uuid not null references runs(id) on delete cascade,  -- trace_id = run id
+  parent_id uuid,
+  name text not null,
+  kind text not null,
+  status text not null default 'ok',
+  start_at timestamptz not null,
+  end_at timestamptz,
+  duration_ms double precision,
+  attributes jsonb not null default '{}'::jsonb,
+  events jsonb not null default '[]'::jsonb,
+  error text
+);
+create index if not exists trace_spans_trace on trace_spans (trace_id, start_at);
+create index if not exists trace_spans_kind_time on trace_spans (kind, start_at);

@@ -313,6 +313,113 @@ def create_app(settings: Settings | None = None, app_state: App | None = None,
 
         return EventSourceResponse(gen(), ping=15)
 
+    # ------------------------------------------------------------------ tracing (tracing/ app)
+    async def trace_summaries(request: Request, runs: list[Run]) -> list[dict[str, Any]]:
+        repo = cf(request).repo
+        counts = await repo.span_counts([r.id for r in runs])
+        names: dict[str, str] = {}
+        out = []
+        for r in runs:
+            if r.brand_id not in names:
+                try:
+                    names[r.brand_id] = (await repo.get_brand(r.brand_id)).name
+                except NotFound:
+                    names[r.brand_id] = "?"
+            c = counts.get(r.id, {})
+            start, end = c.get("start") or r.created_at, c.get("end")
+            running = r.status in (RunStatus.queued, RunStatus.running, RunStatus.resume_requested)
+            title = ((await repo.get_run_state(r.id)).get("script") or {}).get("title") or r.brief
+            out.append({
+                "trace_id": r.id, "run_id": r.id, "brand_id": r.brand_id, "brand_name": names[r.brand_id],
+                "title": title, "status": r.status.value, "started_at": start.isoformat(),
+                "ended_at": None if running or not end else end.isoformat(),
+                "duration_ms": round(((end or start) - start).total_seconds() * 1000, 1) if end else None,
+                "span_count": c.get("spans", 0), "error_count": c.get("errors", 0), "cost_total": r.cost_total,
+                "language": r.language, "tier": r.tier.value,
+            })
+        return out
+
+    @api.get("/traces")
+    async def list_traces(request: Request, p: Auth, brand_id: str | None = None, status: str | None = None,
+                          q: str | None = None, limit: int = 50) -> dict[str, Any]:
+        allowed = await brand_ids_for(request, p)
+        if brand_id and allowed is not None and brand_id not in allowed:
+            raise HTTPException(404, "brand not found")
+        ids = [brand_id] if brand_id else allowed
+        run_status = None if status in (None, "", "error") else status
+        runs = await cf(request).repo.list_runs(ids, run_status, 500)
+        items = await trace_summaries(request, runs)
+        if status == "error":
+            items = [t for t in items if t["error_count"]]
+        if q:
+            ql = q.lower()
+            items = [t for t in items if ql in (t["title"] or "").lower() or ql in t["run_id"]]
+        return {"items": items[: min(limit, 200)]}
+
+    @api.get("/traces/stats")
+    async def trace_stats(request: Request, p: Auth, from_: Annotated[date | None, Query(alias="from")] = None,
+                          to: date | None = None, brand_id: str | None = None) -> dict[str, Any]:
+        from ..tracing import percentile
+
+        allowed = await brand_ids_for(request, p)
+        if brand_id and allowed is not None and brand_id not in allowed:
+            raise HTTPException(404, "brand not found")
+        ids = [brand_id] if brand_id else allowed
+        end_d = to or datetime.now(UTC).date()
+        start_d = from_ or end_d - timedelta(days=14)
+        start = datetime(start_d.year, start_d.month, start_d.day, tzinfo=UTC)
+        end = datetime(end_d.year, end_d.month, end_d.day, tzinfo=UTC) + timedelta(days=1)
+        spans = [s for s in await cf(request).repo.spans_between(start, end, ids) if s.duration_ms is not None]
+
+        providers: dict[tuple[str, str], list[Any]] = defaultdict(list)
+        stages: dict[str, list[Any]] = defaultdict(list)
+        for s in spans:
+            if s.kind in ("llm", "video", "tts", "music", "render", "publish"):
+                key = s.attributes.get("model") if s.kind == "llm" else s.attributes.get("provider")
+                providers[(str(key or s.name), s.kind)].append(s)
+            elif s.kind == "stage":
+                stages[s.name].append(s)
+
+        def stat(group: list[Any]) -> dict[str, Any]:
+            d = [s.duration_ms for s in group]
+            return {"calls": len(group), "errors": sum(s.status == "error" for s in group),
+                    "p50_ms": percentile(d, 0.5), "p95_ms": percentile(d, 0.95),
+                    "avg_ms": round(sum(d) / len(d), 1) if d else 0.0}
+
+        provider_stats = []
+        for (name, kind), group in providers.items():
+            st = stat(group)
+            st["cost"] = round(sum(float(s.attributes.get("cost_usd", 0) or 0) for s in group), 4)
+            provider_stats.append({"name": name, "kind": kind, **st})
+        stage_stats = []
+        for name, group in stages.items():
+            st = stat(group)
+            stage_stats.append({"name": name, "runs": len({s.trace_id for s in group}), "errors": st["errors"],
+                                "p50_ms": st["p50_ms"], "p95_ms": st["p95_ms"]})
+
+        runs = [r for r in await cf(request).repo.list_runs(ids, None, 1000) if start <= r.created_at < end]
+        summaries = await trace_summaries(request, runs)
+        by_day: dict[str, dict[str, float]] = defaultdict(lambda: {"runs": 0, "errors": 0, "cost": 0.0})
+        for t in summaries:
+            day = t["started_at"][:10]
+            by_day[day]["runs"] += 1
+            by_day[day]["errors"] += 1 if t["error_count"] else 0
+            by_day[day]["cost"] = round(by_day[day]["cost"] + t["cost_total"], 4)
+        slowest = sorted((t for t in summaries if t["duration_ms"]), key=lambda t: -t["duration_ms"])[:10]
+        return {
+            "providers": sorted(provider_stats, key=lambda x: -x["calls"]),
+            "stages": sorted(stage_stats, key=lambda x: x["name"]),
+            "throughput": [{"day": d, **v} for d, v in sorted(by_day.items())],
+            "slowest": slowest,
+        }
+
+    @api.get("/traces/{trace_id}")
+    async def get_trace(request: Request, p: Auth, trace_id: str) -> dict[str, Any]:
+        run = await get_run_scoped(request, p, trace_id)
+        spans = await cf(request).repo.list_spans(trace_id)
+        return {"trace": (await trace_summaries(request, [run]))[0],
+                "spans": [s.model_dump(mode="json") for s in spans]}
+
     # ------------------------------------------------------------------ assets (local store only)
     @api.get("/assets/{key:path}")
     async def asset(request: Request, p: Auth, key: str) -> FileResponse:

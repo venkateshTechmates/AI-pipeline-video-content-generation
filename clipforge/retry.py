@@ -64,15 +64,35 @@ async def with_fallback(
     name: Callable[[P], str] = lambda p: getattr(p, "name", type(p).__name__),
     attempts_each: int = 3,  # 1 try + 2 retries (PRD: per-shot retry x2 then fallback)
     base: float = 1.0,
+    kind: str | None = None,  # trace span kind (video/tts/music/...): one span per attempt
 ) -> tuple[T, P]:
+    from . import tracing
+
     errors: list[tuple[str, BaseException]] = []
-    for p in providers:
+    for i, p in enumerate(providers):
+        attempt = 0
+
+        async def traced(p: P = p) -> T:
+            nonlocal attempt
+            attempt += 1
+            if attempt > 1:
+                tracing.event("retry", provider=name(p), attempt=attempt)
+            if kind is None:
+                return await call(p)
+            fallback_from = errors[-1][0] if errors and attempt == 1 else None
+            async with tracing.span(f"{kind}:{name(p)}", kind=kind, provider=name(p),  # type: ignore[arg-type]
+                                    attempt=attempt, fallback_from=fallback_from):
+                return await call(p)
+
         try:
-            result = await retry_async(lambda p=p: call(p), attempts=attempts_each, base=base)
+            result = await retry_async(traced, attempts=attempts_each, base=base)
             return result, p
         except BudgetExceeded:
             raise
         except Exception as e:  # noqa: BLE001
             log.warning("provider %s failed: %s", name(p), e)
             errors.append((name(p), e))
+            if i + 1 < len(providers):
+                tracing.event("fallback", from_provider=name(p), to_provider=name(providers[i + 1]),
+                              error=str(e)[:300])
     raise AllProvidersFailed(errors)

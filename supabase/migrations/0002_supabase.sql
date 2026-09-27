@@ -77,6 +77,9 @@ create policy post_metrics_member on post_metrics for select
   using (exists (select 1 from posts p join runs r on r.id = p.run_id
                  where p.id = post_metrics.post_id and is_brand_member(r.brand_id)));
 create policy hook_history_member on hook_history for select using (is_brand_member(brand_id));
+alter table trace_spans enable row level security;
+create policy trace_spans_member on trace_spans for select
+  using (exists (select 1 from runs r where r.id = trace_spans.trace_id and is_brand_member(r.brand_id)));
 -- provider_credentials, render_jobs, dead_letters, webhook_events: service role only (no policies).
 
 -- Realtime: the review UI subscribes to run status changes.

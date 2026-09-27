@@ -89,6 +89,9 @@ class CostLedger:
             units=round(units, 4), unit_cost=uc, total=round(units * uc, 4),
         )
         await self.repo.add_ledger(entry)
+        from . import tracing
+
+        tracing.add_cost(entry.total, provider)
         await self._maybe_alert(run_id, brand_id)
         return entry
 
@@ -107,6 +110,10 @@ class CostLedger:
         def fits(cost: float) -> bool:
             return run.cost_total + cost <= run.budget and spent_today + cost <= brand.daily_budget
 
+        from . import tracing
+
+        tracing.event("budget_check", estimate_usd=round(estimate, 4), spent_usd=round(run.cost_total, 4),
+                      budget_usd=run.budget, tier=tier.value)
         if fits(estimate):
             return BudgetDecision(tier)
         if tier == Tier.premium and economy_estimate is not None and fits(economy_estimate):
