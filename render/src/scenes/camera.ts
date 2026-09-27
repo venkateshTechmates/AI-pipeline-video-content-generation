@@ -68,7 +68,8 @@ export const travelSpeed = (spec: SceneSpec): number => {
   const c = spec.character, a = spec.action;
   if (a === "fly") return c === "hero" || c === "heroine" ? 900 : c === "butterfly" ? 110 : c === "owl" ? 300 : 380;
   if (a === "run") return c === "dog" || c === "fox" || c === "wolf" ? 620 : 520;
-  if (a === "walk") return c === "penguin" ? 90 : c === "elephant" || c === "bear" ? 150 : c === "person" ? 190 : 220;
+  const indoor = spec.setting === "hospital" || spec.setting === "lab" || spec.setting === "power";
+  if (a === "walk") return indoor ? 70 : c === "penguin" ? 90 : c === "elephant" || c === "bear" ? 150 : c === "person" ? 190 : 220;
   if (a === "swim") return c === "whale" ? 140 : c === "fish" ? 90 : 260;
   if (a === "jump") return c === "rabbit" ? 260 : c === "dolphin" ? 200 : c === "deer" ? 420 : c === "penguin" ? 0 : 200;
   return 0;

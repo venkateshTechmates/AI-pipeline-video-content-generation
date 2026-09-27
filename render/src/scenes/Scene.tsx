@@ -15,6 +15,8 @@ import type { SceneProps } from "./schema";
 import { SETTING_DEFS } from "./settings";
 
 export const VH = 1600;
+/** Settings whose backdrop doesn't scroll; moving subjects walk across the frame instead. */
+const FIXED_ROOM = ["hospital", "lab", "power"];
 
 const Grade: React.FC<{ ctx: Ctx }> = ({ ctx }) => {
   const id = useSid();
@@ -56,7 +58,7 @@ export const SceneComposition: React.FC<SceneProps> = ({ prompt, seed, width, he
     frame, fps, t, dur, VW, VH, seed, spec, pal, flash, uid,
     lit: (c: string) => litBase(c, flash * 0.8),
     groundY: setting.ground(VH),
-    scroll: travelSpeed(spec) * t,
+    scroll: FIXED_ROOM.includes(spec.setting) ? 0 : travelSpeed(spec) * t,
     cam: cameraAt(spec, seed, t, dur),
   };
 
@@ -86,13 +88,14 @@ export const SceneComposition: React.FC<SceneProps> = ({ prompt, seed, width, he
             const tt = t + (p.t ?? 0);
             const Char = def.C;
             const shadow = def.kind === "ground";
+            const walkX = FIXED_ROOM.includes(spec.setting) ? travelSpeed(spec) * (tt - dur / 2) : 0;
             const lift = def.lift ? def.lift({ action: spec.action, t: tt, dur, idx: p.idx }) : 0;
             const auraOn = fx.includes("aura") && p.idx === 0;
             const auraY = def.auraY ?? -300;
             return (
               <g key={p.idx} opacity={p.opacity}>
-                {shadow ? <GroundShadow cx={p.x} cy={p.y + 6} rx={def.shadowW * p.s * (1 - Math.min(0.7, -lift / 900))} opacity={pal.night ? 0.35 : 0.3} /> : null}
-                <g transform={`translate(${p.x.toFixed(1)},${(p.y + lift * p.s).toFixed(1)}) scale(${(p.flip ? -p.s : p.s).toFixed(4)},${p.s.toFixed(4)})`}>
+                {shadow ? <GroundShadow cx={p.x + walkX} cy={p.y + 6} rx={def.shadowW * p.s * (1 - Math.min(0.7, -lift / 900))} opacity={pal.night ? 0.35 : 0.3} /> : null}
+                <g transform={`translate(${(p.x + walkX).toFixed(1)},${(p.y + lift * p.s).toFixed(1)}) scale(${(p.flip ? -p.s : p.s).toFixed(4)},${p.s.toFixed(4)})`}>
                   {auraOn ? <Aura ctx={ctx} x={0} y={auraY} r={def.auraR ?? 300} ry={(def.auraR ?? 300) * 1.25} color={energy} /> : null}
                   <Lit ctx={ctx} size={def.rim ?? 6}>
                     <Char ctx={ctx} action={spec.action} seed={seed * 31 + p.idx * 7} idx={p.idx} t={tt} scale={p.s} />

@@ -53,9 +53,9 @@ export const Lion: React.FC<CharProps> = (p) => {
   const tail = tailPath([-190, -250 + bob], Math.PI * 0.78, t, seed, 11, 24, -0.075, 0.13);
   const tip = tail[tail.length - 1]!;
   const nod = moving ? Math.sin((t * Math.PI * 4) / GAITS.walk.period) * 2 : wobble(t * 0.6, seed, "nod") * 4;
-  const headRot = nod + dip * 12 - roar * 18;
+  const headRot = nod + dip * 12 - roar * 24;
   const headX = 205 + roar * 22, headY = -300 + bob + dip * 16 - roar * 10;
-  const open = roar * (0.85 + Math.sin(t * 34) * 0.08);
+  const open = roar * (1.05 + Math.sin(t * 34) * 0.08);
   return (
     <g>
       {far}
@@ -69,7 +69,7 @@ export const Lion: React.FC<CharProps> = (p) => {
         <path d="M-185,-252 Q-130,-294 -60,-276 Q40,-266 120,-300" stroke={lighten(fur, 0.25)} strokeWidth={9} fill="none" strokeLinecap="round" opacity={0.55} />
       </g>
       {near}
-      <J x={headX} y={headY} r={headRot}>
+      <J x={headX} y={headY} r={headRot} s={1 + roar * 0.12}>
         {/* mane: three lobed layers + chest ruff */}
         <g transform={`translate(-34,14)`}>
           <ellipse cx={-20} cy={80} rx={80} ry={95} fill={mane} />

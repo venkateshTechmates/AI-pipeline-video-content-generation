@@ -98,10 +98,10 @@ export const SoundRings: React.FC<{ x: number; y: number; ang: number; t: number
         key={i}
         d={`M${x + Math.cos(a0) * r},${y + Math.sin(a0) * r} A${r},${r} 0 0 1 ${x + Math.cos(a1) * r},${y + Math.sin(a1) * r}`}
         stroke={color}
-        strokeWidth={(10 - u * 7) * size}
+        strokeWidth={(16 - u * 10) * size}
         fill="none"
         strokeLinecap="round"
-        opacity={on * (1 - u) * 0.8}
+        opacity={on * (1 - u * 0.9)}
       />,
     );
   }

@@ -361,7 +361,9 @@ export const parsePrompt = (promptRaw: string, seed: number): SceneSpec => {
   const cm = first(text, COUNT_WORDS);
   let count = cm ? cm.value : 1;
   matched.count = cm ? cm.word : null;
-  if (character === "fish") count = Math.max(count, 3); // always a school
+  // Plural subject ("dolphins", "butterflies") → a small group.
+  if (!cm && charMatch && /[^s]s$/.test(charMatch.word) && character !== "person") count = 3;
+  if (character === "fish") count = 1; // one school of many fish
   if (["hero", "heroine", "person", "elephant", "whale", "bear"].includes(character)) count = Math.min(count, 2);
 
   // ---- colour hint

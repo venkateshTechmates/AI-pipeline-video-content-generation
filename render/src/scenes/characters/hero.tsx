@@ -16,7 +16,7 @@ const SUITS = [
   { suit: "#0f7a70", accent: "#f59e0b", cape: "#6d3ad6", emblem: "#fde68a" },
   { suit: "#6b3fd4", accent: "#22c3e6", cape: "#10698a", emblem: "#a5f3fc" },
   { suit: "#b3202a", accent: "#fbbf24", cape: "#1e3a8a", emblem: "#fbbf24" },
-  { suit: "#eef2f7", accent: "#2563eb", cape: "#1d4ed8", emblem: "#2563eb" },
+  { suit: "#0e7490", accent: "#f1f5f9", cape: "#e11d48", emblem: "#fde047" },
   { suit: "#15803d", accent: "#facc15", cape: "#f97316", emblem: "#fef08a" },
 ];
 const SKINS = ["#f3cfb0", "#e7b48a", "#c98c5a", "#9a6038", "#6b4125", "#ffe0c2"];
@@ -50,20 +50,24 @@ const Emblem: React.FC<{ x: number; y: number; s: number; look: Look; lit: (c: s
   </g>
 );
 
-const Head: React.FC<{ look: Look; lit: (c: string) => string; t: number; seed: number; tilt: number; mouth?: number }> = ({ look, lit, t, seed, tilt, mouth = 0 }) => {
+const Head: React.FC<{ look: Look; lit: (c: string) => string; t: number; seed: number; tilt: number; mouth?: number; back?: boolean }> = ({ look, lit, t, seed, tilt, mouth = 0, back }) => {
   const skin = lit(look.skin);
   const hair = lit(look.hair);
   const eye = blink(t, seed);
   const hairSway = wobble(t * 1.4, seed, "hair") * 6;
-  return (
-    <J y={-470} r={tilt}>
-      {/* long hair behind (heroine) */}
-      {look.female ? (
+  if (back) {
+    // long hair behind the shoulders (heroine) — drawn before the torso
+    return look.female ? (
+      <J y={-470} r={tilt}>
         <path
-          d={smoothPath([[-34, -60], [34, -60], [44 + hairSway * 0.4, 10], [50 + hairSway, 70], [20 + hairSway, 86], [0, 60], [-20 + hairSway, 86], [-50 + hairSway, 70], [-44 + hairSway * 0.4, 10]])}
+          d={smoothPath([[-34, -60], [34, -60], [46 + hairSway * 0.4, 10], [54 + hairSway, 70], [24 + hairSway, 90], [0, 64], [-24 + hairSway, 90], [-54 + hairSway, 70], [-46 + hairSway * 0.4, 10]])}
           fill={darken(hair, 0.12)}
         />
-      ) : null}
+      </J>
+    ) : null;
+  }
+  return (
+    <J y={-470} r={tilt}>
       <rect x={-13} y={-12} width={26} height={24} fill={darken(skin, 0.12)} />
       <ellipse cx={0} cy={-48} rx={33} ry={40} fill={skin} />
       <ellipse cx={-33} cy={-44} rx={6} ry={10} fill={darken(skin, 0.08)} />
@@ -199,6 +203,7 @@ const HeroFront: React.FC<CharProps> = (p) => {
       {arm(-1, pose.armL, false)}
       {arm(1, pose.armR, false)}
       <g transform={`translate(0,${crouchY}) scale(1,${1 + breathe * 0.004})`}>
+        <Head look={look} lit={lit} t={t} seed={seed} tilt={pose.tilt} back />
         {/* torso */}
         <path
           d={look.female
@@ -238,18 +243,21 @@ const HeroFly: React.FC<CharProps> = (p) => {
   const suit = lit(look.suit), acc = lit(look.accent), cape = lit(look.cape), skin = lit(look.skin), hair = lit(look.hair);
   const glowing = ctx.spec.effects.includes("aura") || ctx.spec.effects.includes("sparks");
   const kick = Math.sin(t * 5.5);
-  // cape ribbon with a travelling wave
-  const L = 470, n = 12;
+  // cape ribbon with a travelling wave, lying over the back and streaming behind
+  const L = 540, n = 14;
   const top: Pt[] = [], bot: Pt[] = [];
   for (let i = 0; i <= n; i++) {
     const u = i / n;
-    const x = 120 - u * L;
-    const w = Math.sin(u * 5.5 - t * 13) * (8 + u * 46) + wobble(t * 2 + u * 3, seed, "cf") * u * 16;
-    const spread = 18 + u * 70;
-    top.push([x, -58 + w - spread * 0.55 + u * 20]);
-    bot.push([x - u * 16, -58 + w + spread * 0.55 + u * 44]);
+    const x = 118 - u * L;
+    const w = Math.sin(u * 6 - t * 12) * (4 + u * 40) + wobble(t * 2 + u * 3, seed, "cf") * u * 14;
+    const half = 12 + u * 52;
+    const cy = -74 - u * 40 + w;
+    top.push([x, cy - half]);
+    bot.push([x - u * 10, cy + half * 0.7]);
   }
-  const capeD = smoothPath([...top, ...bot.reverse()], true, 0.8);
+  const capeD = smoothPath([...top, ...[...bot].reverse()], true, 0.8);
+  // lighter outer face of the cape: top edge down to just above the lining
+  const capeTop = smoothPath([...top, ...bot.map(([x, y], i): Pt => [x, y - (y - top[i]![1]) * 0.4]).reverse()], true, 0.8);
   const eye = blink(t, seed);
   const hairWave = Math.sin(t * 14) * 5;
   const fistGlow = glowing ? 1 : 0.0;
@@ -260,8 +268,6 @@ const HeroFly: React.FC<CharProps> = (p) => {
         <path d={limbPath(110, 34, 28)} fill={darken(suit, 0.15)} />
         <J y={104} r={-8}><path d={limbPath(96, 28, 24)} fill={darken(acc, 0.12)} /><circle cx={0} cy={100} r={16} fill={darken(acc, 0.12)} /></J>
       </J>
-      <path d={capeD} fill={darken(cape, 0.3)} />
-      <path d={capeD} fill={cape} transform="translate(4,-8) scale(0.97,0.9)" />
       {/* back leg */}
       <J x={-74} y={-14} r={100 + kick * 5}>
         <path d={limbPath(150, 50, 38)} fill={darken(suit, 0.15)} />
@@ -289,6 +295,8 @@ const HeroFly: React.FC<CharProps> = (p) => {
           <ellipse cx={-3} cy={156} rx={16} ry={25} fill={darken(acc, 0.08)} />
         </J>
       </J>
+      <path d={capeD} fill={darken(cape, 0.32)} />
+      <path d={capeTop} fill={cape} />
       {/* head */}
       <g transform="translate(176,-62) rotate(-14)">
         {look.female ? <path d={smoothPath([[-20, -40], [-80, -30 + hairWave], [-150, -10 - hairWave], [-110, 10 + hairWave], [-40, 10], [-10, 0]])} fill={darken(hair, 0.1)} /> : null}
@@ -335,5 +343,5 @@ export const heroLift = (p: { action: string; t: number; dur: number }): number 
     return -900 * easeIn(clamp(1 - p.t / ti));
   }
   if (p.action === "fly") return Math.sin(p.t * 1.7) * 18;
-  return -140 + Math.sin(p.t * 1.6) * 16 + Math.sin(p.t * 0.7) * 8;
+  return -120 - p.t * 22 + Math.sin(p.t * 1.6) * 16 + Math.sin(p.t * 0.7) * 8;
 };

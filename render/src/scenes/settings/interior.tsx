@@ -236,7 +236,7 @@ export const LabBack: React.FC<{ ctx: Ctx }> = ({ ctx }) => {
 // ---------------------------------------------------------------------------
 
 /** Where the power-station generator's left face sits (world x). */
-export const generatorX = (ctx: Ctx): number => ctx.VW * 0.55;
+export const generatorX = (ctx: Ctx): number => ctx.VW * 0.5 + 10;
 
 export const PowerBack: React.FC<{ ctx: Ctx }> = ({ ctx }) => {
   const { VW, VH, t, seed } = ctx;
@@ -281,7 +281,7 @@ export const PowerFront: React.FC<{ ctx: Ctx }> = ({ ctx }) => {
   const { VH, t, seed, frame } = ctx;
   const g = VH * 0.86;
   const x0 = generatorX(ctx);
-  const w = 520, h = 640;
+  const w = 440, h = 620;
   const top = g - h;
   const id = useSid();
   const zap = ctx.spec.action === "zap";

@@ -154,8 +154,8 @@ export const LensFlare: React.FC<{ ctx: Ctx; sx: number; sy: number; strength?: 
   const pulse = 0.85 + 0.15 * Math.sin(t * 1.7);
   return (
     <g style={{ mixBlendMode: "screen" }} opacity={strength * pulse}>
-      <Glow cx={sx} cy={sy} r={380} ry={26} color="#fff1cf" opacity={0.6} />
-      <Glow cx={sx} cy={sy} r={160} color="#fff6e0" opacity={0.5} />
+      <Glow cx={sx} cy={sy} r={380} ry={20} color="#fff1cf" opacity={0.35} />
+      <Glow cx={sx} cy={sy} r={130} color="#fff6e0" opacity={0.22} />
       {ghosts.map(([k, r, c, a], i) => (
         <circle key={i} cx={sx + dx * k} cy={sy + dy * k} r={r} fill={c} opacity={a} />
       ))}
