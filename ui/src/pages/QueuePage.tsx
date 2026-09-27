@@ -17,6 +17,7 @@ import {
   TierBadge,
 } from "../components/ui";
 import { STAGE_META } from "../components/icons";
+import { CaptionPreview } from "./run/PreviewTab";
 import { dateTime, money, relTime } from "../format";
 import { isTypingTarget, useAsync, useMediaQuery } from "../hooks";
 import { useBrandScope, useQueue, useToast } from "../state";
@@ -211,6 +212,9 @@ function QueueCard({
 }) {
   const { run, script, qa } = item;
   const title = script?.title || run.brief || "Untitled run";
+  const [t, setT] = useState(0);
+  const { brands } = useBrandScope();
+  const captionStyle = brands.find((b) => b.id === run.brand_id)?.kit?.caption_style;
   return (
     <article
       ref={cardRef}
@@ -220,7 +224,14 @@ function QueueCard({
       aria-label={`${title}, awaiting review`}
       aria-current={focused ? "true" : undefined}
     >
-      <PhoneFrame src={item.preview_url} label={`Preview of ${title}`} />
+      <div className="qcard-media">
+        <PhoneFrame src={item.preview_url} label={`Preview of ${title}`} onTime={item.vo?.words?.length ? setT : undefined} />
+        {focused && item.vo?.words?.length ? (
+          <div className="qcard-caption" title="Word-timed caption preview, synced to the player">
+            <CaptionPreview words={item.vo.words} t={t} style={captionStyle} />
+          </div>
+        ) : null}
+      </div>
       <div className="qcard-body">
         <div className="qcard-meta">
           <span className="brand-name">{item.brand_name}</span>

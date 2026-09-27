@@ -77,7 +77,7 @@ export function Pipeline({ stages, run }: { stages: StageRecord[]; run: Run }) {
               <div className="stage-label">{meta.label}</div>
               <div className="stage-sub tabular">
                 {st === "waiting"
-                  ? "awaiting you"
+                  ? "waiting for review"
                   : st === "running"
                     ? dur !== null
                       ? seconds(dur)

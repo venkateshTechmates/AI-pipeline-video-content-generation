@@ -3861,3 +3861,26 @@ a.lnode:hover {
   color: #fff;
   font-size: var(--fs-xs);
 }
+
+.qcard-media {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  align-items: center;
+}
+.qcard-caption {
+  width: 100%;
+}
+.qcard-caption .caption-stage {
+  min-height: 64px;
+  padding: var(--s-3);
+}
+.qcard-caption .caption-line {
+  font-size: 20px;
+}
+@media (max-width: 860px) {
+  .qcard-media {
+    align-self: stretch;
+  }
+}

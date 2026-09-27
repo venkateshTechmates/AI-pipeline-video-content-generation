@@ -260,9 +260,7 @@ export function PublishTab({ d }: { d: RunDetail }) {
       {platforms.map((p) => {
         const m = meta.find((x) => x.platform === p);
         const post = posts.find((x) => x.platform === p);
-        // metadata.thumbnail_path is a storage key; resolve it via the run's asset list.
-        const thumb = m?.thumbnail_path ? d.assets.find((a) => a.storage_path === m.thumbnail_path)?.url : null;
-        return <PlatformCard key={p} platform={p} meta={m} post={post} thumb={thumb ?? null} />;
+        return <PlatformCard key={p} platform={p} meta={m} post={post} thumb={m?.thumbnail_url ?? null} />;
       })}
     </div>
   );

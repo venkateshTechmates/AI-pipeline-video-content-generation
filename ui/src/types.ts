@@ -114,6 +114,8 @@ export interface PlatformMetadata {
   thumbnail_time: number;
   ai_disclosure: boolean;
   aspect: AspectRatio;
+  /** resolved URL for thumbnail_path (GET /runs/{id} only) */
+  thumbnail_url?: string | null;
 }
 
 export interface PostRecord {
@@ -251,6 +253,7 @@ export interface QueueItem {
   brand_name: string;
   qa: QAReport | null;
   script: Script | null;
+  vo?: VoiceOver | null;
   preview_url: string | null;
   cost_total: number;
   budget: number;
@@ -329,6 +332,13 @@ export interface RunCreateBody {
   budget?: number;
 }
 
+export interface CostDay {
+  day: string;
+  total: number;
+  by_stage: Record<string, number>;
+  by_provider: Record<string, number>;
+}
+
 export interface BrandCosts {
   brand_id: string;
   from: string;
@@ -336,7 +346,7 @@ export interface BrandCosts {
   total: number;
   by_provider: Record<string, number>;
   by_stage: Record<string, number>;
-  by_day: { day: string; total: number }[];
+  by_day: CostDay[];
   runs: number;
 }
 

@@ -7,7 +7,7 @@ import { Card, EmptyState, ErrorBox, PageHeader, Segmented, Skeleton, StatTile }
 import { isoDay, money } from "../format";
 import { useAsync } from "../hooks";
 import { useBrandScope } from "../state";
-import type { BrandCosts } from "../types";
+import { STAGES, type BrandCosts } from "../types";
 
 const TARGET_PER_RUN = 3;
 const SERIES = ["var(--series-1)", "var(--series-2)", "var(--series-3)", "var(--series-4)", "var(--series-5)", "var(--series-6)"];
@@ -114,7 +114,7 @@ export function CostsPage() {
             />
           </div>
 
-          <DayChartCard data={costs.data ?? []} days={days} dailyBudget={dailyBudget} brandName={brandName} />
+          <DayChartCard data={costs.data ?? []} days={days} dailyBudget={dailyBudget} />
 
           <div className="grid-2">
             <Breakdown title="By provider" data={agg.by_provider} total={agg.total} />
@@ -209,27 +209,60 @@ function niceMax(v: number): number {
   return step * p;
 }
 
-/** Stacked daily spend (one series per brand in scope), with hover tooltip and a table view. */
-function DayChartCard({
-  data,
-  days,
-  dailyBudget,
-  brandName,
-}: {
-  data: BrandCosts[];
-  days: string[];
-  dailyBudget: number;
-  brandName: (id: string) => string;
-}) {
+type Dim = "stage" | "provider";
+
+interface Series {
+  id: string;
+  name: string;
+  color: string;
+  byDay: Map<string, number>;
+}
+
+/** Aggregate by_day[].by_stage / by_provider across the brands in scope into stack series. */
+function buildSeries(data: BrandCosts[], dim: Dim): Series[] {
+  const acc = new Map<string, Map<string, number>>();
+  for (const c of data)
+    for (const d of c.by_day) {
+      const parts = (dim === "stage" ? d.by_stage : d.by_provider) ?? {};
+      for (const [k, v] of Object.entries(parts)) {
+        if (!v) continue;
+        const m = acc.get(k) ?? new Map<string, number>();
+        m.set(d.day, (m.get(d.day) ?? 0) + v);
+        acc.set(k, m);
+      }
+    }
+  const order = (k: string) => {
+    const i = (STAGES as readonly string[]).indexOf(k);
+    return dim === "stage" && i >= 0 ? String(i).padStart(2, "0") : `99${k}`;
+  };
+  let keys = [...acc.keys()].sort((a, b) => order(a).localeCompare(order(b)));
+  // Past the categorical palette, fold the smallest series into "Other".
+  const total = (k: string) => [...acc.get(k)!.values()].reduce((a, b) => a + b, 0);
+  let other: Map<string, number> | null = null;
+  if (keys.length > SERIES.length) {
+    const keep = new Set([...keys].sort((a, b) => total(b) - total(a)).slice(0, SERIES.length - 1));
+    other = new Map();
+    for (const k of keys.filter((k) => !keep.has(k)))
+      for (const [d, v] of acc.get(k)!) other.set(d, (other.get(d) ?? 0) + v);
+    keys = keys.filter((k) => keep.has(k));
+  }
+  const out: Series[] = keys.map((k, i) => ({
+    id: k,
+    name: dim === "stage" ? (STAGE_META[k]?.label ?? k) : k,
+    color: SERIES[i],
+    byDay: acc.get(k)!,
+  }));
+  if (other) out.push({ id: "__other", name: "Other", color: "var(--neutral)", byDay: other });
+  return out;
+}
+
+/** Daily spend stacked by stage or provider, with hover tooltip and a table view. */
+function DayChartCard({ data, days, dailyBudget }: { data: BrandCosts[]; days: string[]; dailyBudget: number }) {
   const [ref, W] = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
   const [view, setView] = useState<"chart" | "table">("chart");
-  const series = data.map((c, i) => ({
-    id: c.brand_id,
-    name: brandName(c.brand_id),
-    color: SERIES[i % SERIES.length],
-    byDay: new Map(c.by_day.map((d) => [d.day, d.total])),
-  }));
+  const [dim, setDim] = useState<Dim>("stage");
+  const series = useMemo(() => buildSeries(data, dim), [data, dim]);
   const totals = days.map((d) => series.reduce((s, x) => s + (x.byDay.get(d) ?? 0), 0));
   const H = 260;
   const pad = { l: 48, r: 12, t: 16, b: 28 };
@@ -247,18 +280,29 @@ function DayChartCard({
     <Card
       title="Spend by day"
       actions={
-        <Segmented
-          label="View"
-          value={view}
-          onChange={setView}
-          options={[
-            { id: "chart", label: "Chart" },
-            { id: "table", label: "Table" },
-          ]}
-        />
+        <>
+          <Segmented
+            label="Stack by"
+            value={dim}
+            onChange={setDim}
+            options={[
+              { id: "stage", label: "Stage" },
+              { id: "provider", label: "Provider" },
+            ]}
+          />
+          <Segmented
+            label="View"
+            value={view}
+            onChange={setView}
+            options={[
+              { id: "chart", label: "Chart" },
+              { id: "table", label: "Table" },
+            ]}
+          />
+        </>
       }
     >
-      {series.length > 1 && (
+      {series.length > 0 && (
         <ul className="legend legend-inline">
           {series.map((s) => (
             <li key={s.id}>
@@ -383,18 +427,20 @@ function DayChartCard({
                   timeZone: "UTC",
                 })}
               </div>
-              {series.map((s) => (
-                <div key={s.id} className="tooltip-row">
-                  <span className="swatch" style={{ background: s.color }} aria-hidden />
-                  <span className="grow">{s.name}</span>
-                  <span className="tabular strong">{money(s.byDay.get(days[hover]) ?? 0)}</span>
-                </div>
-              ))}
-              {dailyBudget > 0 && (
-                <div className="tooltip-foot tabular">
-                  {Math.round((totals[hover] / dailyBudget) * 100)}% of daily budget
-                </div>
-              )}
+              {[...series]
+                .reverse()
+                .filter((s) => (s.byDay.get(days[hover]) ?? 0) > 0)
+                .map((s) => (
+                  <div key={s.id} className="tooltip-row">
+                    <span className="swatch" style={{ background: s.color }} aria-hidden />
+                    <span className="grow">{s.name}</span>
+                    <span className="tabular strong">{money(s.byDay.get(days[hover]) ?? 0)}</span>
+                  </div>
+                ))}
+              <div className="tooltip-foot tabular">
+                Total <strong>{money(totals[hover])}</strong>
+                {dailyBudget > 0 && ` · ${Math.round((totals[hover] / dailyBudget) * 100)}% of daily budget`}
+              </div>
             </div>
           )}
         </div>
