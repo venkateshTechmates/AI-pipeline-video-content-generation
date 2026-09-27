@@ -43,8 +43,9 @@ const loadFamily = (family: string): Promise<void> => {
   return task;
 };
 
-export const fontStack = (family: string): string =>
-  `"${family}", "Inter", "Helvetica Neue", Arial, sans-serif`;
+export const fontStack = (family: string, ...fallbacks: string[]): string =>
+  [family, ...fallbacks].filter(Boolean).map((f) => `"${f}"`).join(", ") +
+  ', "Inter", "Helvetica Neue", Arial, sans-serif';
 
 export const useFonts = (families: string[]): void => {
   const key = [...new Set(families.filter((f) => f && !SYSTEM_FONTS.has(f.toLowerCase())))].sort().join("|");

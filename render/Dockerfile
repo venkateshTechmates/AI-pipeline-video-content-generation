@@ -9,7 +9,7 @@ RUN apt-get update \
       libnss3 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 libgbm1 libasound2 \
       libxrandr2 libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
       libpango-1.0-0 libcairo2 libcups2 \
-      fonts-liberation fonts-noto-color-emoji \
+      fonts-liberation fonts-noto-color-emoji fonts-noto-core fonts-noto-cjk \
  && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production

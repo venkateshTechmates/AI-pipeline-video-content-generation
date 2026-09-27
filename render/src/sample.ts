@@ -31,5 +31,6 @@ export const sampleSpec: RenderSpec = {
     font: "Inter",
     cta_text: "Follow for daily tips",
   },
+  language: "en",
   output_prefix: "runs/studio-preview/render",
 };

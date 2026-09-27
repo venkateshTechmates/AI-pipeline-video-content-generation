@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from "remotion";
-import { fontStack } from "../lib/fonts";
+import { fontStack, useFonts } from "../lib/fonts";
+import { langRule } from "../lib/languages";
 import type { CaptionStyle, WordTiming } from "../types";
 
 /** Start a new caption group when the speaker pauses longer than this. */
@@ -35,12 +36,18 @@ type Props = {
   sizeMultiplier?: number;
   /** "color": active word changes colour; "box": active word sits on a highlight-coloured pill. */
   highlight?: "color" | "box";
+  /** Narration language (ISO 639-1); non-Latin scripts get a matching Noto font, spacing and direction. */
+  language?: string;
 };
 
-export const Captions: React.FC<Props> = ({ words, style, sizeMultiplier = 1, highlight = "color" }) => {
+export const Captions: React.FC<Props> = ({ words, style, sizeMultiplier = 1, highlight = "color", language }) => {
   const frame = useCurrentFrame();
   const { fps, width, height } = useVideoConfig();
-  const groups = useMemo(() => groupWords(words, style.words_per_line), [words, style.words_per_line]);
+  const lang = langRule(language);
+  // Unspaced scripts (ja/zh/th) arrive as 2-character tokens: show a few more per line.
+  const perLine = lang.spaced ? style.words_per_line : style.words_per_line + 2;
+  const groups = useMemo(() => groupWords(words, perLine), [words, perLine]);
+  useFonts(lang.font ? [lang.font] : []);
 
   const t = frame / fps;
   let groupIndex = -1;
@@ -56,7 +63,7 @@ export const Captions: React.FC<Props> = ({ words, style, sizeMultiplier = 1, hi
   // Font sizes in the brand kit are authored for a 1080-wide vertical frame;
   // scale by the short edge so 16:9 (1080 tall) doesn't get oversized captions.
   const scale = Math.min(width, height) / 1080;
-  const fontSize = style.font_size * scale * sizeMultiplier;
+  const fontSize = style.font_size * scale * sizeMultiplier * lang.sizeBoost;
   const stroke = style.stroke_width * scale * sizeMultiplier;
   const isVertical = height > width;
 
@@ -86,15 +93,17 @@ export const Captions: React.FC<Props> = ({ words, style, sizeMultiplier = 1, hi
           flexWrap: "wrap",
           justifyContent: "center",
           alignItems: "center",
-          columnGap: fontSize * 0.28,
+          columnGap: lang.spaced ? fontSize * 0.28 : 0,
           rowGap: fontSize * 0.1,
           transform: `scale(${entry})`,
-          fontFamily: fontStack(style.font),
+          // the brand font first; the script's Noto face (Google name, then the system name) covers the rest
+          fontFamily: fontStack(style.font, lang.font, lang.systemFont),
           fontSize,
-          fontWeight: 900,
-          lineHeight: 1.15,
+          fontWeight: lang.sizeBoost > 1 ? 700 : 900,
+          lineHeight: lang.sizeBoost > 1 ? 1.6 : 1.15,
           textAlign: "center",
-          textTransform: style.uppercase ? "uppercase" : "none",
+          direction: lang.rtl ? "rtl" : "ltr",
+          textTransform: style.uppercase && lang.uppercase ? "uppercase" : "none",
         }}
       >
         {group.words.map((w, i) => {

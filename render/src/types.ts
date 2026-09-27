@@ -79,6 +79,8 @@ export const RenderSpecSchema = z.object({
   caption_style: CaptionStyleSchema.prefault({}),
   brand: BrandOverlaySchema.prefault({}),
   output_prefix: z.string().min(1),
+  /** Narration/caption language (ISO 639-1): picks a font with the script's glyphs, spacing, case, direction. */
+  language: z.string().default("en"),
 });
 
 export type WordTiming = z.infer<typeof WordTimingSchema>;

@@ -64,7 +64,7 @@ export const DefaultTemplate: React.FC<CompositionProps> = ({ spec }) => {
       />
       {captionFrames > 0 ? (
         <Sequence durationInFrames={captionFrames} name="captions">
-          <Captions words={spec.words} style={spec.caption_style} />
+          <Captions words={spec.words} style={spec.caption_style} language={spec.language} />
         </Sequence>
       ) : null}
       <Logo src={spec.brand.logo_path} corner="top-right" />

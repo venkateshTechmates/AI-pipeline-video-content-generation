@@ -80,7 +80,7 @@ export const BoldTemplate: React.FC<CompositionProps> = ({ spec }) => {
       <AbsoluteFill style={{ background: "radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(0,0,0,0.55) 100%)" }} />
       {captionFrames > 0 ? (
         <Sequence durationInFrames={captionFrames} name="captions">
-          <Captions words={spec.words} style={spec.caption_style} sizeMultiplier={1.15} highlight="box" />
+          <Captions words={spec.words} style={spec.caption_style} sizeMultiplier={1.15} highlight="box" language={spec.language} />
         </Sequence>
       ) : null}
       <Logo src={spec.brand.logo_path} corner="top-left" size={0.12} opacity={1} />
