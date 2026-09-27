@@ -284,12 +284,14 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
         return {"vo": vo.model_dump(), "timeline": build_timeline(infos, total, primary), "_output_ref": key}
 
     # ------------------------------------------------------------------ 4 gen_shots (fan-out)
-    def clip_key(run_id: str, seg: dict, ref_id: str | None, tier: Tier, nonce: int) -> tuple[str, str]:
+    def clip_key(run_id: str, seg: dict, ref_id: str | None, tier: Tier, nonce: int, ambient: bool = False,
+                 refs: list[str] | None = None) -> tuple[str, str]:
         """Content address of a generated clip. `ref_id` identifies the reference frame: a kit image path, or
         (first_shot mode) the key of shot 0, so later shots' keys are known before the frame is extracted."""
         want = seg.get("billed") or math.ceil(seg["duration"])
         cache = _stable_hash({"p": seg["prompt"], "s": seg.get("style", ""), "n": seg["negative_prompt"],
-                              "d": want, "r": ref_id, "t": tier.value, "nonce": nonce})
+                              "d": want, "r": ref_id, "t": tier.value, "nonce": nonce, "a": ambient,
+                              "refs": list(refs or [])})
         return f"runs/{run_id}/clips/{cache[:24]}.mp4", cache
 
     async def generate_clip(payload: dict[str, Any]) -> dict[str, Any]:
@@ -299,7 +301,8 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
         want = seg.get("billed") or math.ceil(seg["duration"])
         ref = seg.get("ref_image") or payload.get("ref_frame")
         nonce = payload.get("nonce", 0)
-        key, cache = clip_key(run_id, seg, seg.get("ref_image") or payload.get("ref_id"), tier, nonce)
+        key, cache = clip_key(run_id, seg, seg.get("ref_image") or payload.get("ref_id"), tier, nonce,
+                              bool(payload.get("ambient", False)), payload.get("refs", []))
         if store.exists(key):
             tracing.event("cache_hit", key=key)
             meta = json.loads(store.local_path(key + ".json").read_text()) if store.exists(key + ".json") else {}
@@ -314,6 +317,8 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
             duration=min(want, chain[0].max_clip_seconds), aspect=Aspect.vertical,
             image_url=store.url(ref, 86400) if ref else None,
             image_path=store.local_path(ref) if ref else None,
+            reference_images=[store.local_path(k) for k in payload.get("refs", [])],
+            generate_audio=bool(payload.get("ambient", False)),
             seed=(int(cache[:6], 16) + nonce) % 2**31,
             webhook_url=webhook_url(settings, "fal"),
         )
@@ -356,14 +361,16 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
             first_shot = (brand.kit.consistency == "first_shot" and not timeline[0].get("ref_image")
                           and len(timeline) > 1)
 
+            ambient, refs = brand.kit.ambient_audio, list(brand.kit.reference_images)
+
             def ref_ids(t: Tier) -> list[str | None]:
-                k0 = clip_key(run_id, timeline[0], None, t, nonce)[0]
+                k0 = clip_key(run_id, timeline[0], None, t, nonce, ambient, refs)[0]
                 return [s.get("ref_image") or (k0 if first_shot and i else None) for i, s in enumerate(timeline)]
 
             def estimate(t: Tier) -> float:  # only clips not already in the content-addressed store cost money
                 p = providers.video_chain(t)[0]
                 return sum(p.estimate(s["billed"]) for s, r in zip(timeline, ref_ids(t), strict=True)
-                           if not store.exists(clip_key(run_id, s, r, t, nonce)[0]))
+                           if not store.exists(clip_key(run_id, s, r, t, nonce, ambient, refs)[0]))
 
             premium_est = estimate(tier)
             if tier != Tier.economy:  # what the same video would cost re-planned for the economy provider
@@ -381,7 +388,8 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
                 update["timeline"] = timeline
                 await _snapshot(deps, run_id, {"timeline": timeline})
             tier = decision.tier
-            base = {"run_id": run_id, "brand_id": state["brand_id"], "tier": tier.value, "nonce": nonce}
+            base = {"run_id": run_id, "brand_id": state["brand_id"], "tier": tier.value, "nonce": nonce,
+                    "ambient": brand.kit.ambient_audio, "refs": list(brand.kit.reference_images)}
             ref_id = ref_ids(tier)[1] if first_shot else None
             update["tier"] = tier.value
             first: list[dict] = []
@@ -499,7 +507,9 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
             clips=[RenderClip(path=clips[s["index"]]["path"], start=s["start"], duration=s["duration"])
                    for s in timeline],
             audio=RenderAudio(voice_path=vo.audio_path, music_path=m["path"] if m else None,
-                              music_gain_db=m["duck_db"] if m else -12.0),
+                              music_gain_db=m["duck_db"] if m else -12.0,
+                              ambient_gain_db=-18.0 if brand.kit.ambient_audio else None),
+            film_look=brand.kit.film_look,
             words=vo.words, caption_style=brand.kit.caption_style, language=_lang(state),
             brand=BrandOverlay(logo_path=brand.kit.logo_path, primary_color=brand.kit.colors.get("primary", "#111"),
                                accent_color=brand.kit.colors.get("accent", "#FFD400"),

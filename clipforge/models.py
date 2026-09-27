@@ -169,6 +169,10 @@ class BrandKit(BaseModel):
     )
     # Look of every generated shot; prepended to shot prompts sent to Veo/Kling (the animated fallback ignores it).
     visual_style: str = "photorealistic, cinematic, natural lighting, shallow depth of field, 4K, no text"
+    # Keep the video model's native ambient sound (Veo 3.1: street noise, laughter...) under the narration.
+    ambient_audio: bool = True
+    # Subtle grade on the footage (contrast, saturation, vignette) before captions.
+    film_look: Literal["none", "cinematic"] = "cinematic"
     banned_topics: list[str] = Field(default_factory=list)
     tone: str = "energetic, concise, helpful"
     audience: str = "general social media audience"

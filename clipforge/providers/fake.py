@@ -72,9 +72,13 @@ class FakeVideo:
             vf = f"hue=h={hue}:s=1.4,format=yuv420p"
         with tempfile.TemporaryDirectory() as d:
             out = Path(d) / "clip.mp4"
+            # stand-in for the model's native ambient sound
+            noise = f"anoisesrc=color=pink:amplitude=0.05:seed={seed % 9999}:d={req.duration:.2f}"
+            audio_in = ["-f", "lavfi", "-i", noise] if req.generate_audio else []
             await media.run([
-                media.ffmpeg(), "-y", "-f", "lavfi", "-i", src,
-                "-vf", vf, "-c:v", "libx264", "-preset", "ultrafast", str(out),
+                media.ffmpeg(), "-y", "-f", "lavfi", "-i", src, *audio_in,
+                "-vf", vf, "-c:v", "libx264", "-preset", "ultrafast",
+                *(["-c:a", "aac", "-b:a", "96k", "-shortest"] if req.generate_audio else []), str(out),
             ])
             data = out.read_bytes()
         return VideoResult(data=data, duration=req.duration, model="testsrc2", billable_seconds=req.duration,

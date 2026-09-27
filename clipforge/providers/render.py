@@ -63,9 +63,12 @@ class FfmpegRenderer:
 
             args: list[str] = [media.ffmpeg(), "-y", "-hide_banner"]
             filters: list[str] = []
+            has_audio: list[bool] = []
             for i, c in enumerate(spec.clips):
                 args += ["-i", str(self.store.local_path(c.path))]
-                src_dur = await media.duration(self.store.local_path(c.path))
+                info = await media.probe(self.store.local_path(c.path))
+                has_audio.append(any(s["codec_type"] == "audio" for s in info["streams"]))
+                src_dur = float(info["format"]["duration"])
                 # Short source: slow it down up to 1.3x (invisible), then hold the last frame for any remainder.
                 stretch = min(1.3, c.duration / src_dur) if src_dur < c.duration else 1.0
                 pad = max(0.0, c.duration - src_dur * stretch)
@@ -77,13 +80,26 @@ class FfmpegRenderer:
                 )
             n = len(spec.clips)
             filters.append("".join(f"[v{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=0[vcat]")
-            filters.append(f"[vcat]ass={tmpd / 'captions.ass'}[vcap]")
+            graded = "vcat"
+            if spec.film_look == "cinematic":  # subtle contrast/saturation lift + soft vignette, under the captions
+                filters.append("[vcat]eq=contrast=1.05:saturation=1.08,vignette=angle=PI/7[vgrade]")
+                graded = "vgrade"
+            filters.append(f"[{graded}]ass={tmpd / 'captions.ass'}[vcap]")
             last_v = "vcap"
+            # the clips' own (ambient) audio, concatenated on the same timeline as the video
+            ambient = spec.audio.ambient_gain_db is not None and n > 0 and all(has_audio)
+            if ambient:
+                for i, c in enumerate(spec.clips):
+                    filters.append(f"[{i}:a]atrim=0:{c.duration:.3f},asetpts=PTS-STARTPTS,"
+                                   f"apad=whole_dur={c.duration:.3f},aresample=44100[amb{i}]")
+                filters.append("".join(f"[amb{i}]" for i in range(n)) + f"concat=n={n}:v=0:a=1,"
+                               f"volume={spec.audio.ambient_gain_db}dB[amb]")
 
             vo_idx = n
             args += ["-i", str(self.store.local_path(spec.audio.voice_path))]
             next_idx = n + 1
             filters.append(f"[{vo_idx}:a]aresample=44100,volume={spec.audio.voice_gain_db}dB,apad[vo]")
+            mix: list[str] = []
             if spec.audio.music_path:
                 mu_idx = next_idx
                 next_idx += 1
@@ -92,10 +108,17 @@ class FfmpegRenderer:
                 filters.append(f"[{mu_idx}:a]aresample=44100,volume={spec.audio.music_gain_db}dB[mu]")
                 # extra sidechain ducking while the VO speaks
                 filters.append("[mu][vosc]sidechaincompress=threshold=0.02:ratio=6:attack=20:release=300[duck]")
-                filters.append("[vo1][duck]amix=inputs=2:duration=first:normalize=0[amixed]")
+                mix = ["vo1", "duck"]
+            else:
+                mix = ["vo"]
+            if ambient:
+                mix.append("amb")
+            if len(mix) > 1:
+                filters.append("".join(f"[{x}]" for x in mix)
+                               + f"amix=inputs={len(mix)}:duration=first:normalize=0[amixed]")
                 last_a = "amixed"
             else:
-                last_a = "vo"
+                last_a = mix[0]
             filters.append(f"[{last_a}]atrim=0:{spec.duration:.3f},loudnorm=I=-16:TP=-1.5:LRA=11[aout]")
 
             if spec.brand.logo_path:

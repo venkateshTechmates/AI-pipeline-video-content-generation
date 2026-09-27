@@ -58,7 +58,7 @@ export const DefaultTemplate: React.FC<CompositionProps> = ({ spec }) => {
 
   return (
     <AbsoluteFill style={{ backgroundColor: spec.brand.primary_color }}>
-      {spec.clips.length > 0 ? <ClipTrack clips={spec.clips} /> : null}
+      {spec.clips.length > 0 ? <ClipTrack clips={spec.clips} ambientGainDb={spec.audio.ambient_gain_db} filmLook={spec.film_look} /> : null}
       <AbsoluteFill
         style={{ background: "linear-gradient(180deg, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0) 22%, rgba(0,0,0,0) 65%, rgba(0,0,0,0.35) 100%)" }}
       />

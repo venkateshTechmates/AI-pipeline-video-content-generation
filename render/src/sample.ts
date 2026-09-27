@@ -11,7 +11,7 @@ export const sampleSpec: RenderSpec = {
   duration: 10,
   aspects: ["9:16", "1:1", "16:9"],
   clips: [],
-  audio: { voice_path: "", music_path: null, music_gain_db: -12, voice_gain_db: 0 },
+  audio: { voice_path: "", music_path: null, music_gain_db: -12, voice_gain_db: 0, ambient_gain_db: -18 },
   words: text.split(" ").map((word, i) => ({ word, start: 0.2 + i * 0.4, end: 0.2 + i * 0.4 + 0.35 })),
   caption_style: {
     font: "Inter",
@@ -32,5 +32,6 @@ export const sampleSpec: RenderSpec = {
     cta_text: "Follow for daily tips",
   },
   language: "en",
+  film_look: "cinematic",
   output_prefix: "runs/studio-preview/render",
 };

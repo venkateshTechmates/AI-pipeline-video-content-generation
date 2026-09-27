@@ -174,6 +174,13 @@ only once.
 - no black segments of 0.5 s or more, no freezes of 2 s or more
 - moderation of the script and prompts, plus 6 sampled frames reviewed by a vision LLM
 
+**Cinematic realism (brand kit):** `visual_style` is prepended to every shot prompt (photoreal by
+default), `ambient_audio` keeps the video model's native sound (Veo 3.1 generates street noise, laughter,
+dialogue) mixed at −18 dB under the narration, `film_look: cinematic` adds a subtle contrast/saturation
+lift and vignette under the captions, `reference_images` are sent to Veo 3.1 as reference images so the
+same characters appear in every shot (`consistency: first_shot` does the same with the first shot's
+frame), and the script writer is asked for film-style shot lines (lens, camera move, light, mood).
+
 **Auto-approve:** a run skips the human gate when the brand has at least N consecutive human
 approvals and the QA score is at least 0.9 with no blocking failure. Regenerating, editing or
 rejecting resets the streak.

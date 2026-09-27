@@ -85,6 +85,14 @@ class VeoVideo:
         }
         if req.negative_prompt:
             params["negativePrompt"] = req.negative_prompt
+        # Veo 3.1 reference images keep the same characters/products across shots; a first-frame image
+        # (image-to-video) takes precedence when both are given.
+        if req.reference_images and not req.image_path:
+            params["referenceImages"] = [
+                {"image": {"bytesBase64Encoded": base64.b64encode(p.read_bytes()).decode(),
+                           "mimeType": "image/png" if p.suffix == ".png" else "image/jpeg"},
+                 "referenceType": "asset"}
+                for p in req.reference_images[:3]]
         if req.seed is not None:
             params["seed"] = req.seed
         body = {"instances": [instance], "parameters": params}

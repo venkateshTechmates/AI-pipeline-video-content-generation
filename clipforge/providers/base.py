@@ -32,6 +32,7 @@ class VideoRequest(BaseModel):
     aspect: Aspect = Aspect.vertical
     image_url: str | None = None  # reference frame for image-to-video (public or signed URL)
     image_path: Path | None = None  # local reference frame (for providers accepting uploads / fakes)
+    reference_images: list[Path] = Field(default_factory=list)  # character/product refs (Veo 3.1 "ingredients")
     seed: int | None = None
     generate_audio: bool = False
     webhook_url: str | None = None

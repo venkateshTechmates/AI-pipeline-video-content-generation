@@ -76,7 +76,7 @@ export const BoldTemplate: React.FC<CompositionProps> = ({ spec }) => {
 
   return (
     <AbsoluteFill style={{ backgroundColor: spec.brand.primary_color }}>
-      {spec.clips.length > 0 ? <ClipTrack clips={spec.clips} zoom={0.08} /> : null}
+      {spec.clips.length > 0 ? <ClipTrack clips={spec.clips} ambientGainDb={spec.audio.ambient_gain_db} filmLook={spec.film_look} zoom={0.08} /> : null}
       <AbsoluteFill style={{ background: "radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(0,0,0,0.55) 100%)" }} />
       {captionFrames > 0 ? (
         <Sequence durationInFrames={captionFrames} name="captions">

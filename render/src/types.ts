@@ -57,6 +57,8 @@ export const RenderAudioSchema = z.object({
   music_path: z.string().nullable().default(null),
   music_gain_db: z.number().default(-12),
   voice_gain_db: z.number().default(0),
+  /** The clips' own (ambient) audio under the voice, in dB; null mutes clip audio. */
+  ambient_gain_db: z.number().nullable().default(-18),
 });
 
 export const BrandOverlaySchema = z.object({
@@ -81,6 +83,8 @@ export const RenderSpecSchema = z.object({
   output_prefix: z.string().min(1),
   /** Narration/caption language (ISO 639-1): picks a font with the script's glyphs, spacing, case, direction. */
   language: z.string().default("en"),
+  /** Subtle grade on the footage (contrast, saturation, vignette) under the captions. */
+  film_look: z.enum(["none", "cinematic"]).default("cinematic"),
 });
 
 export type WordTiming = z.infer<typeof WordTimingSchema>;

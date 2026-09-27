@@ -10,6 +10,8 @@ or absolute local paths / http(s) URLs.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from .models import Aspect, CaptionStyle, WordTiming
@@ -26,6 +28,7 @@ class RenderAudio(BaseModel):
     music_path: str | None = None
     music_gain_db: float = -12.0  # ducking under VO
     voice_gain_db: float = 0.0
+    ambient_gain_db: float | None = -18.0  # the clips' own audio under the VO; None = mute clip audio
 
 
 class BrandOverlay(BaseModel):
@@ -49,6 +52,7 @@ class RenderSpec(BaseModel):
     brand: BrandOverlay = Field(default_factory=BrandOverlay)
     output_prefix: str  # storage key prefix, e.g. "runs/<run_id>/render"
     language: str = "en"  # caption language: font fallback, no-space scripts, RTL (see clipforge.languages)
+    film_look: Literal["none", "cinematic"] = "cinematic"  # subtle grade on the footage
 
 
 class RenderResultItem(BaseModel):

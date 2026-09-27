@@ -108,8 +108,10 @@ Rules:
 - Beats: hook (first 2 s must grab), setup, value..., payoff, cta. vo_text is the beats joined.
 - caption_text: the on-screen caption version of vo_text (same words, no stage directions).
 - 3-6 shots. Each shot duration <= {max_clip}s unless unavoidable; prefer fewer, longer shots for consistency.
-- Shot prompts are for a text/image-to-video model: describe subject, action, camera move, lighting,
-  lens, style; vertical 9:16 framing; keep a consistent visual style and subject across shots.
+- Shot prompts are for a text/image-to-video model. Write each like a line of a film shot list, 1-2
+  sentences: subject and what they do (expressions, small gestures), setting and time of day, camera
+  (lens, angle, one movement: slow push-in, handheld follow, low-angle dolly, static close-up), lighting
+  and mood; vertical 9:16 framing; the same characters, wardrobe and palette in every shot.
 - No on-screen text, logos, watermarks, real people, celebrities or brands in shot prompts.
 - mood: one or two words for music selection (e.g. "upbeat", "cinematic tension", "lofi calm")."""
 

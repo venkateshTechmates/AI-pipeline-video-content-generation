@@ -55,6 +55,11 @@ async def test_full_run_approve_publish(app):
     # economy tier: kling at $0.084/s + TTS; must stay under the $3 target
     assert 0 < r.cost_total <= 3.0
     assert state["music"]["license_id"]
+    # ambient_audio is on by default: generated clips keep their native audio track (mixed under the VO)
+    from clipforge import media
+
+    info = await media.probe(app.deps.store.local_path(state["clips"][0]["path"]))
+    assert any(s["codec_type"] == "audio" for s in info["streams"])
 
     r = await decide(app, run.id, decision="approve")
     assert r.status == RunStatus.published, r.error
