@@ -42,7 +42,8 @@ async def run_qa(
     v = next((s for s in info["streams"] if s["codec_type"] == "video"), {})
     num, den = (v.get("r_frame_rate") or "0/1").split("/")
     fps = float(num) / float(den or 1)
-    fmt_ok = (v.get("width"), v.get("height")) == expected_size and abs(fps - 30) < 0.5 and v.get("codec_name") == "h264"
+    size_ok = (v.get("width"), v.get("height")) == expected_size
+    fmt_ok = size_ok and abs(fps - 30) < 0.5 and v.get("codec_name") == "h264"
     checks.append(QACheck(name="format", passed=fmt_ok,
                           value=f"{v.get('width')}x{v.get('height')}@{fps:.2f} {v.get('codec_name')}",
                           detail=f"{expected_size[0]}x{expected_size[1]}@30 h264"))

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Captions, Download, Film, Music, Mic } from "lucide-react";
 import { Card, EmptyState, PhoneFrame, Segmented, VideoBox } from "../../components/ui";
 import { seconds } from "../../format";
@@ -233,9 +233,9 @@ function Transcript({ words, t, onSeek }: { words: WordTiming[]; t: number; onSe
   return (
     <div className="transcript" ref={box}>
       {words.map((w, i) => (
+        <Fragment key={i}>
         <button
           type="button"
-          key={i}
           data-i={i}
           className={`tw ${i === active ? "on" : ""} ${w.end < t ? "past" : ""}`}
           onClick={() => onSeek(w.start)}
@@ -243,7 +243,8 @@ function Transcript({ words, t, onSeek }: { words: WordTiming[]; t: number; onSe
           tabIndex={-1}
         >
           {w.word}
-        </button>
+        </button>{" "}
+        </Fragment>
       ))}
     </div>
   );

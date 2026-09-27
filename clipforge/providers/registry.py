@@ -13,7 +13,7 @@ from ..db import Repo
 from ..models import Brand, Tier
 from ..storage import AssetStore
 from . import fake
-from .base import MetricsSource, MusicSource, Publisher, Renderer, TTS, VideoGen
+from .base import TTS, MetricsSource, MusicSource, Publisher, Renderer, VideoGen
 
 
 @dataclass

@@ -18,7 +18,7 @@ import {
 } from "../components/ui";
 import { STAGE_META } from "../components/icons";
 import { dateTime, money, relTime } from "../format";
-import { isTypingTarget, useAsync } from "../hooks";
+import { isTypingTarget, useAsync, useMediaQuery } from "../hooks";
 import { useBrandScope, useQueue, useToast } from "../state";
 import { ACTIVE_STATUSES, type ApprovalDecision, type QueueItem } from "../types";
 
@@ -28,6 +28,7 @@ export function QueuePage() {
   const nav = useNavigate();
   const { brand } = useBrandScope();
   const [focus, setFocus] = useState(0);
+  const wide = useMediaQuery("(min-width: 1180px)");
   const items = queue.items;
   const refs = useRef(new Map<string, RefObject<DecisionBarHandle>>());
   const cardRefs = useRef(new Map<string, HTMLElement | null>());
@@ -48,7 +49,7 @@ export function QueuePage() {
       mounted.current = true;
       return;
     }
-    if (current) {
+    if (current && !wide) {
       const el = cardRefs.current.get(current.run.id);
       el?.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     }
@@ -153,6 +154,23 @@ export function QueuePage() {
         </div>
       ) : items.length === 0 ? (
         <QueueEmpty />
+      ) : wide ? (
+        <div className="triage">
+          <QueueRail items={items} idx={idx} onSelect={setFocus} />
+          {current && (
+            <QueueCard
+              key={current.run.id}
+              item={current}
+              focused
+              wide
+              position={`${idx + 1} of ${items.length}`}
+              onFocus={() => undefined}
+              barRef={barRef(current.run.id)}
+              cardRef={(el) => cardRefs.current.set(current.run.id, el)}
+              onDecide={(d) => decide(current, d)}
+            />
+          )}
+        </div>
       ) : (
         <div className="queue-grid">
           {items.map((item, i) => (
@@ -175,6 +193,8 @@ export function QueuePage() {
 function QueueCard({
   item,
   focused,
+  wide,
+  position,
   onFocus,
   barRef,
   cardRef,
@@ -182,6 +202,8 @@ function QueueCard({
 }: {
   item: QueueItem;
   focused: boolean;
+  wide?: boolean;
+  position?: string;
   onFocus: () => void;
   barRef: RefObject<DecisionBarHandle>;
   cardRef: (el: HTMLElement | null) => void;
@@ -192,7 +214,7 @@ function QueueCard({
   return (
     <article
       ref={cardRef}
-      className={`qcard ${focused ? "is-focused" : ""}`}
+      className={`qcard ${wide ? "qcard-wide" : focused ? "is-focused" : ""}`}
       onMouseDown={onFocus}
       onFocusCapture={onFocus}
       aria-label={`${title}, awaiting review`}
@@ -204,6 +226,7 @@ function QueueCard({
           <span className="brand-name">{item.brand_name}</span>
           <TierBadge tier={run.tier} />
           <span className="muted small" title={dateTime(run.created_at)}>
+            {position ? `${position} · ` : ""}
             {relTime(run.created_at)}
           </span>
         </div>
@@ -232,6 +255,20 @@ function QueueCard({
 
         <CostMeter cost={item.cost_total} budget={item.budget} />
 
+        {wide && script && (
+          <div className="qcard-beats">
+            <div className="eyebrow">Script · {script.beats.length} beats · target {script.target_seconds}s</div>
+            <ol>
+              {script.beats.map((b, i) => (
+                <li key={i} className={`purpose-${b.purpose}`}>
+                  <span className={`purpose-tag purpose-${b.purpose}`}>{b.purpose}</span>
+                  <span>{b.text}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+
         <div className="qcard-foot muted small">
           <PlatformStack platforms={run.platforms} />
           <span className="inline-icon">
@@ -240,7 +277,7 @@ function QueueCard({
           </span>
         </div>
 
-        <DecisionBar ref={barRef} script={script} onDecide={onDecide} showShortcuts={focused} block />
+        <DecisionBar ref={barRef} script={script} onDecide={onDecide} showShortcuts={focused} block={!wide} />
       </div>
     </article>
   );
@@ -279,5 +316,45 @@ function QueueEmpty() {
         </Link>
       }
     />
+  );
+}
+
+function QueueRail({ items, idx, onSelect }: { items: QueueItem[]; idx: number; onSelect: (i: number) => void }) {
+  return (
+    <nav className="rail" aria-label="Runs awaiting review">
+      <ol>
+        {items.map((it, i) => {
+          const ratio = it.budget > 0 ? it.cost_total / it.budget : 0;
+          return (
+            <li key={it.run.id}>
+              <button
+                className={`rail-item ${i === idx ? "active" : ""}`}
+                onClick={() => onSelect(i)}
+                aria-current={i === idx ? "true" : undefined}
+              >
+                <span className="rail-thumb" aria-hidden>
+                  {it.preview_url ? <video src={`${it.preview_url}#t=1`} muted preload="metadata" tabIndex={-1} /> : null}
+                </span>
+                <span className="rail-main">
+                  <span className="rail-title">{it.script?.title || it.run.brief || "Untitled run"}</span>
+                  <span className="rail-sub">
+                    {it.brand_name} · {relTime(it.run.created_at)}
+                  </span>
+                  <span className="rail-stats">
+                    {it.qa && (
+                      <span className={`tone-text-${it.qa.passed ? (it.qa.score >= 0.9 ? "success" : "warn") : "danger"}`}>
+                        QA {Math.round(it.qa.score * 100)}
+                      </span>
+                    )}
+                    <span className={ratio > 1 ? "tone-text-danger" : ""}>{money(it.cost_total)}</span>
+                    <TierBadge tier={it.run.tier} />
+                  </span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
   );
 }

@@ -12,6 +12,7 @@ import os
 from typing import Any, Literal
 
 import httpx
+
 try:  # mcp >= 2
     from mcp.server.mcpserver import MCPServer
 except ImportError:  # mcp 1.x

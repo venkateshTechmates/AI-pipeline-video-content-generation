@@ -8,7 +8,7 @@ import json
 import logging
 from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -117,10 +117,10 @@ def create_app(settings: Settings | None = None, app_state: App | None = None,
     async def costs(request: Request, p: Auth, brand_id: str, from_: Annotated[date | None, Query(alias="from")] = None,
                     to: date | None = None) -> dict[str, Any]:
         await require_brand(request, p, brand_id)
-        end_d = to or datetime.now(timezone.utc).date()
+        end_d = to or datetime.now(UTC).date()
         start_d = from_ or end_d - timedelta(days=30)
-        start = datetime(start_d.year, start_d.month, start_d.day, tzinfo=timezone.utc)
-        end = datetime(end_d.year, end_d.month, end_d.day, tzinfo=timezone.utc) + timedelta(days=1)
+        start = datetime(start_d.year, start_d.month, start_d.day, tzinfo=UTC)
+        end = datetime(end_d.year, end_d.month, end_d.day, tzinfo=UTC) + timedelta(days=1)
         entries = await cf(request).repo.brand_ledger(brand_id, start, end)
         by_provider: dict[str, float] = defaultdict(float)
         by_stage: dict[str, float] = defaultdict(float)
@@ -327,7 +327,7 @@ def create_app(settings: Settings | None = None, app_state: App | None = None,
         status = str(data.get("status", "")).lower()
         if status in ("success", "published", "posted", "completed"):
             post.status = "published"
-            post.published_at = post.published_at or datetime.now(timezone.utc)
+            post.published_at = post.published_at or datetime.now(UTC)
         elif status in ("error", "failed"):
             post.status = "failed"
             post.metadata["error"] = data.get("error") or data.get("message")

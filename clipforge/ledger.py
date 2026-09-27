@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 
@@ -91,7 +91,7 @@ class CostLedger:
         return entry
 
     async def brand_spend_today(self, brand_id: str) -> float:
-        start, end = day_bounds(datetime.now(timezone.utc).date())
+        start, end = day_bounds(datetime.now(UTC).date())
         return sum(e.total for e in await self.repo.brand_ledger(brand_id, start, end))
 
     async def ensure_budget(
@@ -123,7 +123,7 @@ class CostLedger:
             self._alerted.add((run_id, "run"))
             await alert(self.settings, f"Run {run_id} at {run.cost_total:.2f}/{run.budget:.2f} USD")
         brand = await self.repo.get_brand(brand_id)
-        day = datetime.now(timezone.utc).date().isoformat()
+        day = datetime.now(UTC).date().isoformat()
         spent = await self.brand_spend_today(brand_id)
         if brand.daily_budget and spent >= ratio * brand.daily_budget and (brand_id, day) not in self._alerted:
             self._alerted.add((brand_id, day))

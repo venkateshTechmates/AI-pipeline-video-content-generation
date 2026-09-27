@@ -88,7 +88,7 @@ class FfmpegRenderer:
                 mu_idx = next_idx
                 next_idx += 1
                 args += ["-stream_loop", "-1", "-i", str(self.store.local_path(spec.audio.music_path))]
-                filters.append(f"[vo]asplit=2[vo1][vosc]")
+                filters.append("[vo]asplit=2[vo1][vosc]")
                 filters.append(f"[{mu_idx}:a]aresample=44100,volume={spec.audio.music_gain_db}dB[mu]")
                 # extra sidechain ducking while the VO speaks
                 filters.append("[mu][vosc]sidechaincompress=threshold=0.02:ratio=6:attack=20:release=300[duck]")

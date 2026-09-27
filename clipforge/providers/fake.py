@@ -12,7 +12,15 @@ from pathlib import Path
 from .. import media
 from ..captions import estimate_word_timings
 from ..models import ASPECT_SIZE, PostMetrics, PostRecord
-from .base import MusicResult, ProviderError, PublishRequest, PublishResult, TTSResult, VideoRequest, VideoResult
+from .base import (
+    MusicResult,
+    ProviderError,
+    PublishRequest,
+    PublishResult,
+    TTSResult,
+    VideoRequest,
+    VideoResult,
+)
 
 
 def _seed(s: str) -> int:

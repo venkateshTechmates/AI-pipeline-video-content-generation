@@ -2,7 +2,7 @@ import base64
 import hashlib
 import hmac
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -49,7 +49,7 @@ def test_group_words_breaks_on_punctuation():
 def test_estimated_timings_monotonic_and_fill_duration():
     ws = estimate_word_timings("One two three. Four, five six!", 3.0)
     assert len(ws) == 6
-    assert all(a.start <= b.start for a, b in zip(ws, ws[1:]))
+    assert all(a.start <= b.start for a, b in zip(ws, ws[1:], strict=False))
     assert ws[-1].end <= 3.0 and ws[-1].end > 2.5
 
 
@@ -141,9 +141,9 @@ def test_snap_duration():
 def test_next_slot_respects_timezone():
     cal = PostingCalendar(timezone="America/New_York",
                           slots=[CalendarSlot(weekday=0, time="18:00", platforms=[Platform.tiktok])])
-    after = datetime(2026, 9, 27, 12, tzinfo=timezone.utc)  # Sunday
+    after = datetime(2026, 9, 27, 12, tzinfo=UTC)  # Sunday
     at = next_slot(cal, Platform.tiktok, after)
-    assert at == datetime(2026, 9, 28, 22, 0, tzinfo=timezone.utc)  # Mon 18:00 EDT
+    assert at == datetime(2026, 9, 28, 22, 0, tzinfo=UTC)  # Mon 18:00 EDT
     assert next_slot(cal, Platform.youtube, after) is None
 
 
@@ -303,7 +303,7 @@ def test_memory_due_metrics():
     from clipforge.db import _due_metrics
     from clipforge.models import PostRecord
 
-    now = datetime(2026, 9, 27, tzinfo=timezone.utc)
+    now = datetime(2026, 9, 27, tzinfo=UTC)
     p = PostRecord(run_id="r", platform=Platform.x, status="published", published_at=now - timedelta(hours=25))
     assert _due_metrics([(p, "b")], {}, now) == [(p, "b")]
     assert _due_metrics([(p, "b")], {p.id: [now]}, now) == []

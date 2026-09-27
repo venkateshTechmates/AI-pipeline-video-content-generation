@@ -1,0 +1,85 @@
+# Local / single-host deployment.
+#   docker compose up --build            -> fake providers, no keys needed
+#   cp .env.example .env && edit          -> real providers (set PROVIDER_MODE=live)
+# Services: postgres (plain Postgres; use Supabase in production), api, worker, render (Remotion), ui.
+
+x-app: &app
+  build: .
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    DATABASE_URL: postgresql://postgres:postgres@db:5432/clipforge
+    ASSET_ROOT: /data/assets
+    PROVIDER_MODE: ${PROVIDER_MODE:-fake}
+    PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+  volumes:
+    - assets:/data
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: clipforge
+    volumes:
+      - pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      retries: 20
+
+  migrate:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/clipforge
+    command: ["clipforge", "migrate", "--core-only"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    command: ["clipforge", "api", "--port", "8000"]
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/clipforge
+      ASSET_ROOT: /data/assets
+      PROVIDER_MODE: ${PROVIDER_MODE:-fake}
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+      EMBEDDED_WORKER: "false"
+    ports:
+      - "8000:8000"
+
+  worker:
+    <<: *app
+    command: ["clipforge", "worker"]
+    deploy:
+      replicas: 1
+
+  render:
+    build: ./render
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/clipforge
+      ASSET_ROOT: /data/assets
+      RENDER_CONCURRENCY: "1"
+    volumes:
+      - assets:/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  ui:
+    build: ./ui
+    environment:
+      API_UPSTREAM: http://api:8000
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
+volumes:
+  pg:
+  assets:

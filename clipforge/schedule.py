@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .models import Platform, PostingCalendar
@@ -18,7 +18,7 @@ def slots_between(cal: PostingCalendar, start: datetime, end: datetime) -> list[
             if s.weekday != day.weekday():
                 continue
             hh, mm = (int(x) for x in s.time.split(":"))
-            at = datetime(day.year, day.month, day.day, hh, mm, tzinfo=tz).astimezone(timezone.utc)
+            at = datetime(day.year, day.month, day.day, hh, mm, tzinfo=tz).astimezone(UTC)
             if start <= at < end:
                 out.append((at, s.platforms))
         day += timedelta(days=1)

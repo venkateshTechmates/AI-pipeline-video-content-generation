@@ -5,6 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -43,7 +44,6 @@ class Settings(BaseSettings):
     gcs_output_uri: str | None = None
     elevenlabs_api_key: str | None = None
     epidemic_api_key: str | None = None
-    artlist_api_key: str | None = None
     music_library_dir: Path | None = None  # local licensed library with manifest.json
     creatomate_api_key: str | None = None
     upload_post_api_key: str | None = None
@@ -79,6 +79,14 @@ class Settings(BaseSettings):
     langfuse_public_key: str | None = None
     langfuse_secret_key: str | None = None
     langfuse_host: str = "https://cloud.langfuse.com"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _blank_is_unset(cls, data):
+        """`KEY=` in .env means unset, not an empty string / Path('.')."""
+        if isinstance(data, dict):
+            return {k: v for k, v in data.items() if not (isinstance(v, str) and v.strip() == "")}
+        return data
 
 
 @lru_cache

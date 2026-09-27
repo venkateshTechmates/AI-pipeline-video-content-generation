@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Protocol
 
 from .models import (
@@ -619,15 +619,15 @@ class PostgresRepo:
     # ---- hooks
     async def add_hook(self, brand_id, run_id, text, embedding) -> None:
         await self._one(
-            "insert into hook_history (brand_id, run_id, text, embedding) values (%s,%s,%s,%s::vector)",
-            brand_id, run_id, text, str(embedding) if embedding else None)
+            "insert into hook_history (brand_id, run_id, text, embedding) values (%s,%s,%s,%s)",
+            brand_id, run_id, text, embedding)
 
     async def recent_hooks(self, brand_id: str, since: datetime, exclude_run_id: str | None = None):
         rows = await self._all(
-            """select text, embedding::text emb from hook_history
+            """select text, embedding emb from hook_history
                where brand_id = %s and created_at >= %s and run_id is distinct from %s::uuid""",
             brand_id, since, exclude_run_id)
-        return [(r["text"], json.loads(r["emb"]) if r["emb"] else None) for r in rows]
+        return [(r["text"], list(r["emb"]) if r["emb"] else None) for r in rows]
 
     # ---- ops
     async def add_dead_letter(self, run_id, stage, error, payload) -> None:
@@ -677,5 +677,5 @@ class PostgresRepo:
 
 
 def day_bounds(d: date) -> tuple[datetime, datetime]:
-    start = datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+    start = datetime(d.year, d.month, d.day, tzinfo=UTC)
     return start, start + timedelta(days=1)

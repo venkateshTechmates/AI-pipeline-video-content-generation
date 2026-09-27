@@ -6,7 +6,7 @@ between nodes is one of these Pydantic models, serialised to JSON.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal
 from uuid import uuid4
@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def new_id() -> str:

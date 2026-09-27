@@ -9,7 +9,7 @@ import logging
 import math
 import tempfile
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -677,6 +677,6 @@ async def _pick_slot(deps: Deps, brand: Brand, platform: Platform, explicit: dat
         used = await deps.repo.posts_on_day(brand.id, platform, day)
         if deps.quota.allow(brand.id, platform, day, used):
             return when
-        base = datetime(day.year, day.month, day.day, tzinfo=timezone.utc) + timedelta(days=1)
+        base = datetime(day.year, day.month, day.day, tzinfo=UTC) + timedelta(days=1)
         when = next_slot(brand.calendar, platform, base) or base + timedelta(hours=(when or now).hour)
     raise PermanentError(f"{platform.value} posting quota exhausted for 14 days")

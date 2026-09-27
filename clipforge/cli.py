@@ -6,7 +6,7 @@
   clipforge run --brand ID --brief "..." [--approve]   one run in-process, prints the mp4 paths (M1)
   clipforge seed                upsert the demo brand
   clipforge cron <job>          calendar | metrics | refresh-tokens | recover
-  clipforge migrate             apply supabase/migrations/*.sql to DATABASE_URL
+  clipforge migrate [--core-only]  apply supabase/migrations/*.sql to DATABASE_URL
   clipforge mcp                 MCP server (stdio) exposing create_run/get_run/approve_run/list_queue
 """
 
@@ -97,7 +97,7 @@ async def _cron(job: str) -> None:
         await app.aclose()
 
 
-async def _migrate() -> None:
+async def _migrate(core_only: bool) -> None:
     import psycopg
 
     from .config import get_settings
@@ -108,6 +108,8 @@ async def _migrate() -> None:
     root = Path(__file__).resolve().parent.parent / "supabase" / "migrations"
     async with await psycopg.AsyncConnection.connect(dsn, autocommit=True) as conn:
         for f in sorted(root.glob("*.sql")):
+            if core_only and "supabase" in f.name:
+                continue
             print(f"applying {f.name}")
             await conn.execute(f.read_text())
 
@@ -158,7 +160,8 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("seed")
     c = sub.add_parser("cron")
     c.add_argument("job", choices=["calendar", "metrics", "refresh-tokens", "recover"])
-    sub.add_parser("migrate")
+    m = sub.add_parser("migrate")
+    m.add_argument("--core-only", action="store_true", help="plain Postgres: skip the Supabase layer")
     sub.add_parser("mcp")
     args = ap.parse_args(argv)
     _logging()
@@ -177,7 +180,7 @@ def main(argv: list[str] | None = None) -> None:
         case "cron":
             asyncio.run(_cron(args.job))
         case "migrate":
-            asyncio.run(_migrate())
+            asyncio.run(_migrate(args.core_only))
         case "mcp":
             from .mcp_server import main as mcp_main
 

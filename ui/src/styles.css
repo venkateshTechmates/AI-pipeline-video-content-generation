@@ -427,6 +427,12 @@ textarea::placeholder {
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   min-height: 100vh;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--surface) 70%, transparent) calc(var(--sidebar-w) - 1px),
+    var(--border) calc(var(--sidebar-w) - 1px) var(--sidebar-w),
+    transparent var(--sidebar-w)
+  );
 }
 .sidebar {
   position: sticky;
@@ -1836,6 +1842,138 @@ textarea::placeholder {
   flex-wrap: wrap;
 }
 
+/* triage (wide screens): rail + focused card */
+.triage {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: var(--s-5);
+  align-items: start;
+}
+.rail {
+  position: sticky;
+  top: calc(var(--topbar-h) + 20px);
+  max-height: calc(100vh - var(--topbar-h) - 40px);
+  overflow: auto;
+  padding: 4px;
+  margin: -4px;
+}
+.rail ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rail-item {
+  width: 100%;
+  display: flex;
+  gap: var(--s-3);
+  padding: 8px;
+  border-radius: var(--r-lg);
+  border: 1px solid transparent;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+.rail-item:hover {
+  background: var(--surface-hover);
+}
+.rail-item.active {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow:
+    0 0 0 3px var(--accent-soft),
+    var(--shadow-sm);
+}
+.rail-thumb {
+  flex: none;
+  width: 42px;
+  aspect-ratio: 9 / 16;
+  border-radius: 7px;
+  overflow: hidden;
+  background: linear-gradient(160deg, var(--surface-3), #000);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.rail-thumb video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+.rail-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.rail-title {
+  font-weight: 600;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.rail-sub {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+.rail-stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.qcard-wide {
+  padding: var(--s-5);
+  gap: var(--s-6);
+  animation: fade-in 200ms var(--ease);
+}
+.qcard-wide .phone {
+  width: 300px;
+}
+.qcard-wide .qcard-title {
+  font-size: 24px;
+}
+.qcard-wide .decision {
+  margin-top: auto;
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--border);
+}
+.qcard-wide .decision .btn {
+  height: 38px;
+}
+.qcard-wide .btn-approve {
+  padding: 0 18px;
+}
+.qcard-beats ol {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--fs-sm);
+  max-height: 180px;
+  overflow: auto;
+}
+.qcard-beats li {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  gap: var(--s-2);
+  color: var(--text-2);
+}
+.qcard-beats .purpose-tag {
+  padding-top: 1px;
+}
+
 /* ------------------------------------------------------------------ run detail */
 
 .run-head {
@@ -2120,8 +2258,8 @@ textarea::placeholder {
 .tw {
   border: 0;
   background: none;
-  padding: 1px 3px;
-  margin: 0 1px;
+  padding: 1px 2px;
+  margin: 0;
   border-radius: 4px;
   cursor: pointer;
   color: var(--text-3);
@@ -3380,6 +3518,7 @@ a.lnode:hover {
 @media (max-width: 860px) {
   .shell {
     grid-template-columns: 1fr;
+    background: none;
   }
   .sidebar {
     position: fixed;
