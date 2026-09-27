@@ -1280,6 +1280,7 @@ textarea::placeholder {
 
 .phone {
   flex: none;
+  align-self: flex-start;
   width: 236px;
   padding: 7px;
   border-radius: 34px;
@@ -3655,7 +3656,7 @@ a.lnode:hover {
     padding: var(--s-3);
   }
   .qcard .phone {
-    width: min(280px, 78vw);
+    width: min(240px, 66vw);
     align-self: center;
   }
   .queue-grid {
@@ -3727,6 +3728,14 @@ a.lnode:hover {
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: none;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .filters > *,
+  .search,
+  .filters-right select {
+    min-width: 0;
+    max-width: 100%;
   }
   .chip-tab {
     flex: none;
@@ -3777,8 +3786,14 @@ a.lnode:hover {
   .range {
     width: 100%;
   }
-  .range input[type="date"] {
+  .range .segmented {
+    width: 100%;
+  }
+  .range .segmented button {
     flex: 1;
+  }
+  .range input[type="date"] {
+    flex: 1 1 40%;
     min-width: 0;
   }
   .qa-layout .table th:nth-child(4),

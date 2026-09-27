@@ -440,7 +440,11 @@ export function Modal({
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
-    if (open && !d.open) d.showModal();
+    if (open && !d.open) {
+      d.showModal();
+      // showModal focuses the first focusable (the close button); prefer the first field.
+      d.querySelector<HTMLElement>(".modal-body input, .modal-body textarea, .modal-body select")?.focus();
+    }
     if (!open && d.open) d.close();
   }, [open]);
   return (

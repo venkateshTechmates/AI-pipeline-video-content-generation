@@ -129,7 +129,7 @@ export function QueuePage() {
               <Kbd>J</Kbd>
               <Kbd>K</Kbd> move · <Kbd>A</Kbd> approve · <Kbd>?</Kbd> all shortcuts
             </span>
-            <button className="btn btn-ghost" onClick={queue.reload} aria-label="Refresh queue">
+            <button className="btn btn-ghost hide-mobile" onClick={queue.reload} aria-label="Refresh queue">
               <RefreshCw size={15} /> <span className="hide-mobile">Refresh</span>
             </button>
           </>
