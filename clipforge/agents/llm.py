@@ -108,16 +108,31 @@ class LLM:
     def _model(self, primary: str, fallback: str):
         from pydantic_ai.models.fallback import FallbackModel
 
-        avail = []
-        for m in (primary, fallback):
-            prov = m.split(":")[0]
-            if (prov == "anthropic" and self.settings.anthropic_api_key) or (
-                prov == "openai" and self.settings.openai_api_key
-            ):
-                avail.append(m)
+        avail = [m for m in (self._build(primary), self._build(fallback)) if m is not None]
         if not avail:
-            raise RuntimeError("no LLM configured (ANTHROPIC_API_KEY / OPENAI_API_KEY)")
+            raise RuntimeError("no LLM configured (ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENROUTER_API_KEY)")
         return avail[0] if len(avail) == 1 else FallbackModel(*avail)
+
+    def _build(self, spec: str):
+        """`provider:model` -> model instance using keys from Settings (so keys in .env work too)."""
+        prov, _, name = spec.partition(":")
+        s = self.settings
+        if prov == "anthropic" and s.anthropic_api_key:
+            from pydantic_ai.models.anthropic import AnthropicModel
+            from pydantic_ai.providers.anthropic import AnthropicProvider
+
+            return AnthropicModel(name, provider=AnthropicProvider(api_key=s.anthropic_api_key))
+        if prov == "openai" and s.openai_api_key:
+            from pydantic_ai.models.openai import OpenAIChatModel
+            from pydantic_ai.providers.openai import OpenAIProvider
+
+            return OpenAIChatModel(name, provider=OpenAIProvider(api_key=s.openai_api_key))
+        if prov == "openrouter" and s.openrouter_api_key:
+            from pydantic_ai.models.openrouter import OpenRouterModel
+            from pydantic_ai.providers.openrouter import OpenRouterProvider
+
+            return OpenRouterModel(name, provider=OpenRouterProvider(api_key=s.openrouter_api_key))
+        return None
 
     @staticmethod
     def _tokens(result) -> int:
@@ -285,4 +300,5 @@ class FakeLLM:
 
 
 def build_llm(settings: Settings) -> LLMBackend:
-    return FakeLLM() if settings.provider_mode == "fake" else LLM(settings)
+    mode = settings.llm_mode or settings.provider_mode
+    return FakeLLM() if mode == "fake" else LLM(settings)

@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     env: str = "dev"  # dev | prod
     # "fake" swaps every provider for deterministic offline fakes (tests, demos, CI).
     provider_mode: str = "live"  # live | fake
+    # LLM stages only; defaults to provider_mode. LLM_MODE=live + PROVIDER_MODE=fake = real scripts, offline media.
+    llm_mode: str | None = None
 
     # ---- persistence
     database_url: str | None = None  # Postgres (Supabase). None -> in-memory repo + memory checkpointer
@@ -28,6 +30,7 @@ class Settings(BaseSettings):
     # ---- LLM
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
+    openrouter_api_key: str | None = None  # use with LLM_MODEL=openrouter:<vendor>/<model>
     llm_model: str = "anthropic:claude-sonnet-5"
     llm_fallback_model: str = "openai:gpt-5"
     vision_model: str = "anthropic:claude-sonnet-5"

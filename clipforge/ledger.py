@@ -39,6 +39,7 @@ PRICES: dict[str, float] = {
     # llm (per 1M tokens, blended in+out)
     "anthropic:llm": 6.0,
     "openai:llm": 5.0,
+    "openrouter:llm": 6.0,
     "openai:embedding": 0.02,
     # music (per licensed track; subscription amortised)
     "music:track": 0.0,
