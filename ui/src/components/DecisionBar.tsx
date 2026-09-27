@@ -1,8 +1,9 @@
-import { forwardRef, useImperativeHandle, useState } from "react";
-import { api } from "../api";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { Ban, Check, ChevronDown, Pencil, RefreshCw } from "lucide-react";
 import { REGENERATABLE, type ApprovalDecision, type RegenStage, type Script } from "../types";
+import { STAGE_META } from "./icons";
 import { ScriptEditor } from "./ScriptEditor";
-import { ErrorBox } from "./ui";
+import { Kbd, Modal, Spinner } from "./ui";
 
 export interface DecisionBarHandle {
   approve: () => void;
@@ -12,131 +13,174 @@ export interface DecisionBarHandle {
 }
 
 interface Props {
-  runId: string;
   script: Script | null;
-  /** Called after the backend accepted a decision. */
-  onDone?: (decision: ApprovalDecision, status: string) => void;
+  /** Performs the decision; rejects to keep the bar interactive. */
+  onDecide: (d: ApprovalDecision) => Promise<void>;
   showShortcuts?: boolean;
   disabled?: boolean;
+  /** Stretch buttons to fill (card layout). */
+  block?: boolean;
 }
 
-/** Approve / Regenerate(stage) / Edit script / Reject(note) controls for one run. */
+/** Approve / Regenerate (stage menu) / Edit script / Reject (note) for one run. */
 export const DecisionBar = forwardRef<DecisionBarHandle, Props>(function DecisionBar(
-  { runId, script, onDone, showShortcuts, disabled },
+  { script, onDecide, showShortcuts, disabled, block },
   ref,
 ) {
-  const [stage, setStage] = useState<RegenStage>("gen_shots");
-  const [mode, setMode] = useState<"idle" | "edit" | "reject">("idle");
+  const [menu, setMenu] = useState(false);
+  const [modal, setModal] = useState<"edit" | "reject" | null>(null);
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<unknown>(null);
-  const [result, setResult] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const send = async (d: ApprovalDecision) => {
     if (busy || disabled) return;
-    if (d.decision === "reject" && !window.confirm("Reject this run? It will not be published.")) return;
-    setBusy(true);
-    setError(null);
+    setBusy(d.decision);
     try {
-      const res = await api.decide(runId, d);
-      setResult(`${d.decision}${d.stage ? ` → ${d.stage}` : ""}: ${res.status}`);
-      setMode("idle");
+      await onDecide(d);
+      setModal(null);
+      setMenu(false);
       setNote("");
-      onDone?.(d, res.status);
-    } catch (e) {
-      setError(e);
+    } catch {
+      /* parent reports the error */
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
   const approve = () => void send({ decision: "approve" });
-  const regenerate = () => void send({ decision: "regenerate", stage });
-  const edit = () => {
-    if (script) setMode("edit");
+  const regen = (stage: RegenStage) => void send({ decision: "regenerate", stage });
+  const edit = () => script && !disabled && setModal("edit");
+  const reject = () => !disabled && setModal("reject");
+
+  useImperativeHandle(ref, () => ({ approve, regenerate: () => !disabled && setMenu((m) => !m), edit, reject }));
+
+  // Focus the first item when the menu opens; close on outside click.
+  useEffect(() => {
+    if (!menu) return;
+    menuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    const onDoc = (e: MouseEvent) => {
+      if (!menuRef.current?.parentElement?.contains(e.target as Node)) setMenu(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [menu]);
+
+  const onMenuKey = (e: React.KeyboardEvent) => {
+    e.stopPropagation();
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("button") ?? []);
+    const i = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === "Escape") {
+      setMenu(false);
+      e.preventDefault();
+    } else if (e.key === "ArrowDown" || e.key === "j") {
+      items[(i + 1) % items.length]?.focus();
+      e.preventDefault();
+    } else if (e.key === "ArrowUp" || e.key === "k") {
+      items[(i - 1 + items.length) % items.length]?.focus();
+      e.preventDefault();
+    } else if (/^[1-6]$/.test(e.key)) {
+      regen(REGENERATABLE[Number(e.key) - 1]);
+      e.preventDefault();
+    }
   };
-  const reject = () => setMode("reject");
 
-  useImperativeHandle(ref, () => ({ approve, regenerate, edit, reject }));
-
-  const k = (key: string) => (showShortcuts ? <kbd>{key}</kbd> : null);
-  const off = busy || disabled;
+  const k = (key: string) => (showShortcuts ? <Kbd>{key}</Kbd> : null);
+  const off = !!busy || disabled;
 
   return (
-    <div className="decision-bar">
-      <div className="decision-buttons">
-        <button className="btn btn-approve" onClick={approve} disabled={off}>
-          Approve {k("A")}
-        </button>
-        <div className="btn-group">
-          <select
-            aria-label="Stage to regenerate"
-            value={stage}
-            onChange={(e) => setStage(e.target.value as RegenStage)}
-            onKeyDown={(e) => e.stopPropagation()}
-            disabled={off}
-          >
-            {REGENERATABLE.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-          <button className="btn btn-regen" onClick={regenerate} disabled={off}>
-            Regenerate {k("R")}
-          </button>
-        </div>
+    <div className={`decision ${block ? "decision-block" : ""}`}>
+      <button className="btn btn-primary btn-approve" onClick={approve} disabled={off}>
+        {busy === "approve" ? <Spinner size={15} /> : <Check size={15} aria-hidden />}
+        Approve {k("A")}
+      </button>
+      <div className="menu-wrap">
         <button
           className="btn"
-          onClick={edit}
-          disabled={off || !script}
-          title={script ? "Edit script" : "No script available"}
+          onClick={() => setMenu((m) => !m)}
+          disabled={off}
+          aria-haspopup="menu"
+          aria-expanded={menu}
         >
-          Edit script {k("E")}
+          {busy === "regenerate" ? <Spinner size={15} /> : <RefreshCw size={15} aria-hidden />}
+          Regenerate {k("R")}
+          <ChevronDown size={14} aria-hidden className="chev" />
         </button>
-        <button className="btn btn-reject" onClick={reject} disabled={off}>
-          Reject
-        </button>
+        {menu && (
+          <div className="menu" role="menu" ref={menuRef} onKeyDown={onMenuKey} aria-label="Stage to regenerate from">
+            <div className="menu-label">Regenerate from stage</div>
+            {REGENERATABLE.map((s, i) => {
+              const m = STAGE_META[s];
+              const Icon = m.icon;
+              return (
+                <button key={s} role="menuitem" className="menu-item" onClick={() => regen(s)}>
+                  <Icon size={15} aria-hidden />
+                  <span className="menu-item-main">
+                    <span>{m.label}</span>
+                    <span className="menu-hint">{m.hint}</span>
+                  </span>
+                  <Kbd>{i + 1}</Kbd>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
+      <button className="btn" onClick={edit} disabled={off || !script} title={script ? "Edit script" : "No script"}>
+        <Pencil size={15} aria-hidden />
+        Edit {k("E")}
+      </button>
+      <button className="btn btn-danger-ghost" onClick={reject} disabled={off}>
+        <Ban size={15} aria-hidden />
+        Reject {k("X")}
+      </button>
 
-      {mode === "reject" && (
+      <Modal open={modal === "reject"} onClose={() => setModal(null)} title="Reject this run?">
         <form
-          className="reject-form row gap"
+          className="form"
           onSubmit={(e) => {
             e.preventDefault();
             void send({ decision: "reject", note: note.trim() || undefined });
           }}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") setMode("idle");
-            e.stopPropagation();
-          }}
         >
-          <input
-            autoFocus
-            placeholder="Reason for rejection (note)"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-          />
-          <button type="submit" className="btn btn-reject" disabled={off}>
-            Confirm reject
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={() => setMode("idle")}>
-            Cancel
-          </button>
+          <p className="muted">The run will not be published. A note helps tune future ideas and scripts.</p>
+          <label className="field">
+            <span className="field-label">Reason (optional)</span>
+            <textarea
+              rows={3}
+              autoFocus
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="e.g. Off-brand tone, hook repeats last week's post…"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  void send({ decision: "reject", note: note.trim() || undefined });
+                }
+              }}
+            />
+          </label>
+          <div className="form-actions">
+            <button type="button" className="btn btn-ghost" onClick={() => setModal(null)}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-danger" disabled={!!busy}>
+              {busy === "reject" ? <Spinner size={15} /> : <Ban size={15} aria-hidden />} Reject run
+            </button>
+          </div>
         </form>
-      )}
+      </Modal>
 
-      {mode === "edit" && script && (
-        <ScriptEditor
-          script={script}
-          busy={busy}
-          onCancel={() => setMode("idle")}
-          onSubmit={(patch, n) => void send({ decision: "edit", patch, note: n.trim() || undefined })}
-        />
-      )}
-
-      <ErrorBox error={error} />
-      {result && !error && <div className="ok-box small">Sent — {result}</div>}
+      <Modal open={modal === "edit"} onClose={() => setModal(null)} title="Edit script" wide>
+        {script && (
+          <ScriptEditor
+            script={script}
+            busy={busy === "edit"}
+            onCancel={() => setModal(null)}
+            onSubmit={(patch, n) => void send({ decision: "edit", patch, note: n.trim() || undefined })}
+          />
+        )}
+      </Modal>
     </div>
   );
 });

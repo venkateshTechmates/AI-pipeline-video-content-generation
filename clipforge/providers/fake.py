@@ -20,16 +20,21 @@ def _seed(s: str) -> int:
 
 
 class FakeVideo:
-    max_clip_seconds = 10.0
-    supported_durations = None
-
-    def __init__(self, name: str = "fake:video", fail_times: int = 0):
+    def __init__(self, name: str = "fake:video", fail_times: int = 0,
+                 durations: tuple[float, ...] | None = (5.0, 10.0)):
         self.name = name
+        self.supported_durations = durations
+        self.max_clip_seconds = max(durations) if durations else 10.0
         self.fail_times = fail_times  # simulate transient failures for retry/fallback tests
         self.calls = 0
 
     def estimate(self, seconds: float) -> float:
-        return 0.0
+        from ..ledger import price
+
+        if self.supported_durations:
+            seconds = next((d for d in sorted(self.supported_durations) if d >= seconds - 0.25),
+                           max(self.supported_durations))
+        return seconds * price(self.name)
 
     async def generate(self, req: VideoRequest) -> VideoResult:
         self.calls += 1

@@ -34,24 +34,34 @@ export function Login() {
 
   return (
     <div className="login">
-      <form className="panel form" onSubmit={submit}>
-        <h1>
-          Clip<span className="accent">Forge</span> review
-        </h1>
-        <div className="tabs">
-          <button type="button" className={mode === "password" ? "active" : ""} onClick={() => setMode("password")}>
+      <form className="card card-body form" onSubmit={submit}>
+        <div className="login-head">
+          <span className="logo">
+            <span className="logo-mark" aria-hidden>
+              <svg viewBox="0 0 24 24" width="14" height="14">
+                <path d="M8 5.5v13l10.5-6.5z" fill="currentColor" />
+              </svg>
+            </span>
+            <span className="logo-text">
+              ClipForge<span className="logo-sub">Console</span>
+            </span>
+          </span>
+          <p className="muted small">Sign in to review and publish runs.</p>
+        </div>
+        <div className="segmented" role="radiogroup" aria-label="Sign-in method">
+          <button type="button" role="radio" aria-checked={mode === "password"} className={mode === "password" ? "active" : ""} onClick={() => setMode("password")}>
             Password
           </button>
-          <button type="button" className={mode === "magic" ? "active" : ""} onClick={() => setMode("magic")}>
+          <button type="button" role="radio" aria-checked={mode === "magic"} className={mode === "magic" ? "active" : ""} onClick={() => setMode("magic")}>
             Magic link
           </button>
         </div>
-        <label>
+        <label className="field">
           Email
           <input type="email" required autoFocus value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
         {mode === "password" && (
-          <label>
+          <label className="field">
             Password
             <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
           </label>
@@ -59,7 +69,7 @@ export function Login() {
         <button className="btn btn-primary" type="submit" disabled={busy}>
           {busy ? "…" : mode === "magic" ? "Send magic link" : "Sign in"}
         </button>
-        {msg && <div className={msg.ok ? "ok-box" : "error-box"}>{msg.text}</div>}
+        {msg && <div className={msg.ok ? "ok-box" : "alert tone-danger"}>{msg.text}</div>}
       </form>
     </div>
   );

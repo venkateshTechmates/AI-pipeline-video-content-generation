@@ -161,7 +161,7 @@ class MemoryRepo:
         self.states[run_id] = json.loads(json.dumps(state, default=str))
 
     async def get_run_state(self, run_id: str) -> dict[str, Any]:
-        return self.states.get(run_id, {})
+        return json.loads(json.dumps(self.states.get(run_id, {})))
 
     async def upsert_stage(self, stage: StageRecord) -> StageRecord:
         self.stages[(stage.run_id, stage.name)] = stage.model_copy(deep=True)

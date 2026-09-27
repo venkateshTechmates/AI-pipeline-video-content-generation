@@ -43,8 +43,9 @@ def _ass_cta(text: str, start: float, end: float, w: int, h: int, color: str) ->
 class FfmpegRenderer:
     name = "ffmpeg:render"
 
-    def __init__(self, store: AssetStore):
+    def __init__(self, store: AssetStore, preset: str = "medium"):
         self.store = store
+        self.preset = preset
 
     async def render(self, spec: RenderSpec) -> RenderResult:
         outs = await asyncio.gather(*(self._render_aspect(spec, a) for a in spec.aspects))
@@ -109,7 +110,7 @@ class FfmpegRenderer:
             args += [
                 "-filter_complex", ";".join(filters), "-map", f"[{last_v}]", "-map", "[aout]",
                 "-t", f"{spec.duration:.3f}", "-r", str(spec.fps),
-                "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p", "-profile:v", "high",
+                "-c:v", "libx264", "-preset", self.preset, "-crf", "20", "-pix_fmt", "yuv420p", "-profile:v", "high",
                 "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-movflags", "+faststart", str(out),
             ]
             await media.run(args, timeout=1800)

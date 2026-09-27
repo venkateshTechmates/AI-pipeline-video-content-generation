@@ -1,72 +1,169 @@
-import { useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { createRef, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { ArrowUpRight, CalendarClock, Inbox, Plus, RefreshCw, Sparkles } from "lucide-react";
 import { api } from "../api";
 import { DecisionBar, type DecisionBarHandle } from "../components/DecisionBar";
-import { CostBar, ErrorBox, FailedChecks, Loading, QaBadge, VideoPlayer } from "../components/ui";
-import { money, relTime } from "../format";
-import { useAsync, useBrands, useLiveRefresh } from "../hooks";
-import type { QueueItem } from "../types";
+import {
+  CheckChips,
+  CostMeter,
+  EmptyState,
+  ErrorBox,
+  Kbd,
+  PageHeader,
+  PhoneFrame,
+  PlatformStack,
+  ScoreRing,
+  Skeleton,
+  TierBadge,
+} from "../components/ui";
+import { STAGE_META } from "../components/icons";
+import { dateTime, money, relTime } from "../format";
+import { isTypingTarget, useAsync } from "../hooks";
+import { useBrandScope, useQueue, useToast } from "../state";
+import { ACTIVE_STATUSES, type ApprovalDecision, type QueueItem } from "../types";
 
 export function QueuePage() {
-  const [params, setParams] = useSearchParams();
-  const brandId = params.get("brand_id") ?? "";
-  const brands = useBrands();
-  const queue = useAsync(() => api.queue(brandId || undefined).then((r) => r.items), [brandId]);
-  const live = useLiveRefresh(() => void queue.reload(true));
+  const queue = useQueue();
+  const toast = useToast();
+  const nav = useNavigate();
+  const { brand } = useBrandScope();
+  const [focus, setFocus] = useState(0);
+  const items = queue.items;
+  const refs = useRef(new Map<string, RefObject<DecisionBarHandle>>());
+  const cardRefs = useRef(new Map<string, HTMLElement | null>());
 
-  const items = queue.data ?? [];
-  const totalCost = items.reduce((s, i) => s + (i.cost_total ?? 0), 0);
+  const barRef = (id: string) => {
+    let r = refs.current.get(id);
+    if (!r) refs.current.set(id, (r = createRef<DecisionBarHandle>()));
+    return r;
+  };
+
+  const idx = Math.min(focus, Math.max(0, items.length - 1));
+  const current = items[idx];
+
+  // Keep the focused card in view (not on first render).
+  const mounted = useRef(false);
+  useEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true;
+      return;
+    }
+    if (current) {
+      const el = cardRefs.current.get(current.run.id);
+      el?.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    }
+  }, [current?.run.id]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isTypingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (document.querySelector("dialog[open]") || document.querySelector(".menu")) return;
+      if (!current) return;
+      const bar = refs.current.get(current.run.id)?.current;
+      const key = e.key.toLowerCase();
+      if (key === "j") setFocus(Math.min(items.length - 1, idx + 1));
+      else if (key === "k") setFocus(Math.max(0, idx - 1));
+      else if (key === "a") bar?.approve();
+      else if (key === "r") bar?.regenerate();
+      else if (key === "e") bar?.edit();
+      else if (key === "x") bar?.reject();
+      else if (key === "o" || key === "enter") {
+        if ((e.target as HTMLElement).closest?.("button, a")) return;
+        nav(`/runs/${current.run.id}`);
+      } else if (key === " ") {
+        if ((e.target as HTMLElement).closest?.("button, a, video")) return;
+        const v = cardRefs.current.get(current.run.id)?.querySelector("video");
+        if (v) void (v.paused ? v.play() : v.pause());
+      } else return;
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [current, idx, items.length, nav]);
+
+  const decide = async (item: QueueItem, d: ApprovalDecision) => {
+    const title = item.script?.title || item.run.brief || "Run";
+    queue.remove(item.run.id);
+    try {
+      await api.decide(item.run.id, d);
+      toast(
+        d.decision === "approve"
+          ? { tone: "success", title: "Approved", body: `${title} — metadata & publishing will follow.` }
+          : d.decision === "regenerate"
+            ? { tone: "info", title: `Regenerating from ${STAGE_META[d.stage!]?.label ?? d.stage}`, body: title }
+            : d.decision === "edit"
+              ? { tone: "info", title: "Script edit sent", body: `${title} — re-voicing and re-rendering.` }
+              : { tone: "warn", title: "Rejected", body: title },
+      );
+      queue.reload();
+    } catch (e) {
+      queue.restore(item);
+      toast({ tone: "error", title: `Couldn't ${d.decision}`, body: e instanceof Error ? e.message : String(e) });
+      throw e;
+    }
+  };
+
+  const pending = items.reduce((s, i) => s + (i.cost_total ?? 0), 0);
 
   return (
     <div className="page">
-      <div className="page-head">
-        <h1>
-          Approval queue <span className="count">{items.length}</span>
-        </h1>
-        <div className="row gap">
-          <span className="muted small" title="Queue refresh mode">
-            {live === "realtime" ? "● live" : "○ polling 10s"}
-          </span>
-          <select
-            value={brandId}
-            onChange={(e) => {
-              const v = e.target.value;
-              setParams(v ? { brand_id: v } : {});
-            }}
-          >
-            <option value="">All brands</option>
-            {(brands.data ?? []).map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
-          <button className="btn" onClick={() => void queue.reload()}>
-            Refresh
-          </button>
-        </div>
-      </div>
-      <p className="muted small">
-        Pending spend in queue: <strong>{money(totalCost)}</strong> · Focus a card (click or Tab) then press{" "}
-        <kbd>A</kbd> approve, <kbd>R</kbd> regenerate, <kbd>E</kbd> edit, <kbd>J</kbd>/<kbd>K</kbd> next/prev.
-      </p>
+      <PageHeader
+        title={
+          <>
+            Review queue {items.length > 0 && <span className="count-badge">{items.length}</span>}
+          </>
+        }
+        subtitle={
+          <>
+            {brand ? brand.name : "All brands"} · {money(pending)} of generation awaiting a decision ·{" "}
+            <span className="live-ind">
+              <span className={`live-dot ${queue.live === "realtime" ? "on" : "poll"}`} aria-hidden />
+              {queue.live === "realtime" ? "Live" : "Auto-refresh 10s"}
+            </span>
+          </>
+        }
+        actions={
+          <>
+            <span className="hide-mobile muted small shortcut-hint">
+              <Kbd>J</Kbd>
+              <Kbd>K</Kbd> move · <Kbd>A</Kbd> approve · <Kbd>?</Kbd> all shortcuts
+            </span>
+            <button className="btn btn-ghost" onClick={queue.reload} aria-label="Refresh queue">
+              <RefreshCw size={15} /> <span className="hide-mobile">Refresh</span>
+            </button>
+          </>
+        }
+      />
+      <ErrorBox error={queue.error} onRetry={queue.reload} />
 
-      <ErrorBox error={queue.error} />
-      {queue.loading && !queue.data ? (
-        <Loading />
+      {queue.loading ? (
+        <div className="queue-grid">
+          {[0, 1].map((i) => (
+            <div className="qcard" key={i}>
+              <Skeleton h={420} w={236} r={28} />
+              <div className="qcard-body">
+                <Skeleton h={14} w="40%" />
+                <Skeleton h={26} w="85%" />
+                <Skeleton h={48} />
+                <Skeleton h={40} />
+                <Skeleton h={36} />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : items.length === 0 ? (
-        <div className="empty">Nothing awaiting approval.</div>
+        <QueueEmpty />
       ) : (
         <div className="queue-grid">
-          {items.map((item) => (
+          {items.map((item, i) => (
             <QueueCard
               key={item.run.id}
               item={item}
-              onDone={() => {
-                // optimistic removal; realtime/poll will reconcile
-                queue.setData((cur) => (cur ?? []).filter((x) => x.run.id !== item.run.id));
-                void queue.reload(true);
-              }}
+              focused={i === idx}
+              onFocus={() => setFocus(i)}
+              barRef={barRef(item.run.id)}
+              cardRef={(el) => cardRefs.current.set(item.run.id, el)}
+              onDecide={(d) => decide(item, d)}
             />
           ))}
         </div>
@@ -75,66 +172,112 @@ export function QueuePage() {
   );
 }
 
-function QueueCard({ item, onDone }: { item: QueueItem; onDone: () => void }) {
-  const bar = useRef<DecisionBarHandle>(null);
-  const [focused, setFocused] = useState(false);
+function QueueCard({
+  item,
+  focused,
+  onFocus,
+  barRef,
+  cardRef,
+  onDecide,
+}: {
+  item: QueueItem;
+  focused: boolean;
+  onFocus: () => void;
+  barRef: RefObject<DecisionBarHandle>;
+  cardRef: (el: HTMLElement | null) => void;
+  onDecide: (d: ApprovalDecision) => Promise<void>;
+}) {
   const { run, script, qa } = item;
   const title = script?.title || run.brief || "Untitled run";
-
-  const onKey = (e: React.KeyboardEvent<HTMLElement>) => {
-    const tag = (e.target as HTMLElement).tagName;
-    if (["INPUT", "TEXTAREA", "SELECT"].includes(tag) || e.metaKey || e.ctrlKey || e.altKey) return;
-    const key = e.key.toLowerCase();
-    if (key === "a") bar.current?.approve();
-    else if (key === "r") bar.current?.regenerate();
-    else if (key === "e") bar.current?.edit();
-    else if (key === "j" || key === "k") {
-      const cards = Array.from(document.querySelectorAll<HTMLElement>(".queue-card"));
-      const i = cards.indexOf(e.currentTarget);
-      cards[key === "j" ? Math.min(cards.length - 1, i + 1) : Math.max(0, i - 1)]?.focus();
-    } else return;
-    e.preventDefault();
-  };
-
   return (
     <article
-      className={`queue-card panel ${focused ? "focused" : ""}`}
-      tabIndex={0}
-      onKeyDown={onKey}
-      onFocus={() => setFocused(true)}
-      onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node)) setFocused(false);
-      }}
+      ref={cardRef}
+      className={`qcard ${focused ? "is-focused" : ""}`}
+      onMouseDown={onFocus}
+      onFocusCapture={onFocus}
+      aria-label={`${title}, awaiting review`}
+      aria-current={focused ? "true" : undefined}
     >
-      <VideoPlayer src={item.preview_url} aspect="9:16" />
-      <div className="queue-body">
-        <div className="row between">
-          <span className="brand-tag">{item.brand_name}</span>
-          <span className="muted small" title={run.created_at}>
-            {run.tier} · {relTime(run.created_at)}
+      <PhoneFrame src={item.preview_url} label={`Preview of ${title}`} />
+      <div className="qcard-body">
+        <div className="qcard-meta">
+          <span className="brand-name">{item.brand_name}</span>
+          <TierBadge tier={run.tier} />
+          <span className="muted small" title={dateTime(run.created_at)}>
+            {relTime(run.created_at)}
           </span>
         </div>
-        <h3 className="queue-title">
-          <Link to={`/runs/${run.id}`}>{title}</Link>
-        </h3>
-        {script?.hook && <p className="hook">“{script.hook}”</p>}
-        <CostBar cost={item.cost_total} budget={item.budget} large />
-        <div className="qa-block">
+        <h2 className="qcard-title">
+          <Link to={`/runs/${run.id}`}>
+            {title}
+            <ArrowUpRight size={16} aria-hidden className="title-arrow" />
+          </Link>
+        </h2>
+        {script?.hook && script.hook !== title && <p className="qcard-hook">“{script.hook}”</p>}
+        {run.brief && <p className="qcard-brief muted small">Brief: {run.brief}</p>}
+
+        <div className="qcard-qa">
           {qa ? (
             <>
-              <QaBadge score={qa.score} passed={qa.passed} />
-              <FailedChecks checks={qa.checks} />
+              <ScoreRing score={qa.score} passed={qa.passed} />
+              <div className="qcard-qa-text">
+                <div className="small strong">{qa.passed ? "QA passed" : "QA failed"}</div>
+                <CheckChips checks={qa.checks} />
+              </div>
             </>
           ) : (
             <span className="muted small">No QA report</span>
           )}
         </div>
-        <div className="muted small">
-          Platforms: {run.platforms.join(", ")}
-          {run.schedule ? ` · scheduled ${new Date(run.schedule).toLocaleString()}` : ""}
+
+        <CostMeter cost={item.cost_total} budget={item.budget} />
+
+        <div className="qcard-foot muted small">
+          <PlatformStack platforms={run.platforms} />
+          <span className="inline-icon">
+            <CalendarClock size={14} aria-hidden />
+            {run.schedule ? dateTime(run.schedule) : "Next calendar slot"}
+          </span>
         </div>
-        <DecisionBar ref={bar} runId={run.id} script={script} onDone={onDone} showShortcuts={focused} />
+
+        <DecisionBar ref={barRef} script={script} onDecide={onDecide} showShortcuts={focused} block />
       </div>
     </article>
+  );
+}
+
+function QueueEmpty() {
+  const { brandId } = useBrandScope();
+  const runs = useAsync(() => api.runs({ brand_id: brandId || undefined, limit: 100 }).then((r) => r.items), [brandId]);
+  const active = useMemo(() => (runs.data ?? []).filter((r) => ACTIVE_STATUSES.includes(r.status)), [runs.data]);
+  return (
+    <EmptyState
+      icon={
+        <div className="empty-orb">
+          <Inbox size={28} />
+          <Sparkles size={14} className="empty-spark" />
+        </div>
+      }
+      title="Inbox zero"
+      body={
+        <>
+          Nothing needs your review right now.
+          {active.length > 0 && (
+            <>
+              {" "}
+              <Link to="/runs">
+                {active.length} run{active.length === 1 ? " is" : "s are"} in progress
+              </Link>{" "}
+              and will land here when QA finishes.
+            </>
+          )}
+        </>
+      }
+      action={
+        <Link className="btn btn-primary" to="/runs/new">
+          <Plus size={15} /> Start a run
+        </Link>
+      }
+    />
   );
 }

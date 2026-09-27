@@ -83,7 +83,11 @@ export const api = {
   decide: (id: string, decision: ApprovalDecision) =>
     request<{ status: string }>("POST", `/runs/${encodeURIComponent(id)}/approve`, { body: decision }),
 
+  retry: (id: string) => request<{ status: string }>("POST", `/runs/${encodeURIComponent(id)}/retry`),
+
   brands: () => request<{ items: Brand[] }>("GET", "/brands"),
+
+  brand: (id: string) => request<Brand>("GET", `/brands/${encodeURIComponent(id)}`),
 
   brandCosts: (id: string, range: { from?: string; to?: string } = {}) =>
     request<BrandCosts>("GET", `/brands/${encodeURIComponent(id)}/costs`, { query: range }),

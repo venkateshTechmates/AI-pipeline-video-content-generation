@@ -38,7 +38,7 @@ class Providers:
 
 def build_providers(settings: Settings, repo: Repo, store: AssetStore) -> Providers:
     if settings.provider_mode == "fake":
-        return fake_providers(store)
+        return fake_providers(store, settings.x264_preset)
 
     from .fal import FalVideo
     from .music import EpidemicMusic, LibraryMusic
@@ -88,7 +88,7 @@ def build_providers(settings: Settings, repo: Repo, store: AssetStore) -> Provid
     elif settings.renderer == "creatomate" and creatomate:
         renderer = creatomate
     else:
-        renderer = FfmpegRenderer(store)
+        renderer = FfmpegRenderer(store, settings.x264_preset)
 
     publishers: dict[str, Publisher] = {}
     metrics: dict[str, MetricsSource] = {}
@@ -106,16 +106,16 @@ def build_providers(settings: Settings, repo: Repo, store: AssetStore) -> Provid
                      renderer=renderer, publishers=publishers, metrics=metrics)
 
 
-def fake_providers(store: AssetStore) -> Providers:
+def fake_providers(store: AssetStore, preset: str = "medium") -> Providers:
     from .render import FfmpegRenderer
 
     kling = fake.FakeVideo("fake:kling")
     return Providers(
         video={Tier.economy: [kling, fake.FakeVideo("fake:seedance")],
-               Tier.premium: [fake.FakeVideo("fake:veo"), kling]},
+               Tier.premium: [fake.FakeVideo("fake:veo", durations=(4.0, 6.0, 8.0)), kling]},
         tts=[fake.FakeTTS()],
         music=[fake.FakeMusic()],
-        renderer=FfmpegRenderer(store),
+        renderer=FfmpegRenderer(store, preset),
         publishers={"upload_post": fake.FakePublisher(), "ayrshare": fake.FakePublisher()},
         metrics={"upload_post": fake.FakeMetrics(), "ayrshare": fake.FakeMetrics()},
     )

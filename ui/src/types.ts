@@ -1,13 +1,16 @@
-// Mirrors clipforge/models.py (Pydantic -> JSON). Datetimes arrive as ISO strings.
+// Mirrors clipforge/models.py and the view shapes built in clipforge/api/app.py.
+// Datetimes arrive as ISO strings.
 
 export type Tier = "economy" | "premium";
 export type Platform = "youtube" | "instagram" | "tiktok" | "linkedin" | "x";
 export const ALL_PLATFORMS: Platform[] = ["youtube", "instagram", "tiktok", "linkedin", "x"];
 export type AspectRatio = "9:16" | "1:1" | "16:9";
+export const ASPECTS: AspectRatio[] = ["9:16", "1:1", "16:9"];
 
 export type RunStatus =
   | "queued"
   | "running"
+  | "resume_requested"
   | "awaiting_approval"
   | "awaiting_provider"
   | "scheduled"
@@ -18,6 +21,7 @@ export type RunStatus =
 export const RUN_STATUSES: RunStatus[] = [
   "queued",
   "running",
+  "resume_requested",
   "awaiting_approval",
   "awaiting_provider",
   "scheduled",
@@ -26,6 +30,8 @@ export const RUN_STATUSES: RunStatus[] = [
   "aborted",
   "dead_letter",
 ];
+export const RETRYABLE_STATUSES: RunStatus[] = ["failed", "dead_letter", "aborted"];
+export const ACTIVE_STATUSES: RunStatus[] = ["queued", "running", "resume_requested", "awaiting_provider"];
 
 export type StageStatus = "pending" | "running" | "succeeded" | "skipped" | "failed";
 
@@ -42,6 +48,7 @@ export const STAGES = [
   "publish",
   "metrics",
 ] as const;
+export type StageName = (typeof STAGES)[number];
 
 export const REGENERATABLE = ["ideate", "script", "tts", "gen_shots", "music", "render"] as const;
 export type RegenStage = (typeof REGENERATABLE)[number];
@@ -53,6 +60,8 @@ export interface Hook {
   angle: string;
   score: number;
   rationale: string;
+  /** cosine similarity to recent hooks (dedupe), present on state.hooks */
+  similarity?: number;
 }
 
 export type BeatPurpose = "hook" | "setup" | "value" | "payoff" | "cta";
@@ -140,6 +149,7 @@ export interface Run {
   platforms: Platform[];
   error: string | null;
   attempts: number;
+  pending_decision: ApprovalDecision | null;
   created_at: string;
   updated_at: string;
 }
@@ -180,17 +190,58 @@ export interface LedgerEntry {
   at: string;
 }
 
+// ---------------------------------------------------------------- brand kit
+
+export interface CaptionStyle {
+  font: string;
+  font_size: number;
+  color: string;
+  highlight_color: string;
+  stroke_color: string;
+  stroke_width: number;
+  position: "top" | "center" | "bottom";
+  words_per_line: number;
+  uppercase: boolean;
+}
+
+export interface CalendarSlot {
+  weekday: number; // Monday = 0
+  time: string;
+  platforms: Platform[];
+}
+
+export interface BrandKit {
+  fonts: string[];
+  colors: Record<string, string>;
+  logo_path: string | null;
+  caption_style: CaptionStyle;
+  voice_id: string;
+  reference_images: string[];
+  negative_prompts: string[];
+  banned_topics: string[];
+  tone: string;
+  audience: string;
+  niche: string;
+  template: string;
+  music_moods: string[];
+  disclosure: { default: boolean; per_platform: Partial<Record<Platform, boolean>> };
+  platforms: Platform[];
+  hashtags: string[];
+  consistency: "reference" | "first_shot" | "none";
+}
+
 export interface Brand {
   id: string;
   org_id: string;
   name: string;
+  kit: BrandKit;
   tier: Tier;
   budget_per_run: number;
   daily_budget: number;
   trust_score: number;
   auto_approve_after: number;
-  // kit, calendar, publisher etc. exist but are not needed by the UI
-  [key: string]: unknown;
+  calendar: { timezone: string; slots: CalendarSlot[] };
+  publisher: "upload_post" | "ayrshare";
 }
 
 // ---------------------------------------------------------------- API shapes
@@ -198,7 +249,7 @@ export interface Brand {
 export interface QueueItem {
   run: Run;
   brand_name: string;
-  qa: { score: number; passed: boolean; checks: QACheck[] } | null;
+  qa: QAReport | null;
   script: Script | null;
   preview_url: string | null;
   cost_total: number;
@@ -208,25 +259,62 @@ export interface QueueItem {
 export interface RenderInfo {
   aspect: AspectRatio;
   path: string;
-  url: string;
+  url: string | null;
   width: number;
   height: number;
   duration: number;
 }
 
+export interface ClipInfo {
+  shot_index: number;
+  index?: number;
+  path: string;
+  url: string | null;
+  duration: number;
+  provider: string;
+  model: string;
+}
+
+export interface WordTiming {
+  word: string;
+  start: number;
+  end: number;
+}
+
+export interface VoiceOver {
+  audio_path: string;
+  duration: number;
+  words: WordTiming[];
+  lufs: number | null;
+}
+
+export interface MusicTrack {
+  path: string;
+  title: string;
+  license_id: string;
+  provider: string;
+  duck_db: number;
+}
+
 export interface RunState {
+  hooks?: Hook[];
+  hook?: Hook;
   script?: Script;
   shot_list?: { shots: Shot[] };
   qa_report?: QAReport;
-  renders?: RenderInfo[];
   metadata?: PlatformMetadata[];
-  hooks?: Hook[];
+  vo?: VoiceOver;
+  music?: MusicTrack;
+  decision?: ApprovalDecision;
+  auto_approved?: boolean;
+  renders: RenderInfo[];
+  clips: ClipInfo[];
 }
 
 export interface RunDetail {
   run: Run;
   stages: StageRecord[];
-  assets: (Asset & { url: string })[];
+  assets: (Asset & { url: string | null })[];
   ledger: LedgerEntry[];
   posts: PostRecord[];
   state: RunState;
@@ -238,10 +326,13 @@ export interface RunCreateBody {
   tier?: Tier;
   schedule?: string;
   platforms?: Platform[];
+  budget?: number;
 }
 
 export interface BrandCosts {
   brand_id: string;
+  from: string;
+  to: string;
   total: number;
   by_provider: Record<string, number>;
   by_stage: Record<string, number>;
@@ -249,7 +340,8 @@ export interface BrandCosts {
   runs: number;
 }
 
+/** SSE frames from GET /runs/{id}/events. */
 export type RunEvent =
-  | ({ type: "stage" } & Partial<StageRecord> & { name?: string; stage?: string })
-  | { type: "status"; status: RunStatus; error?: string | null; [k: string]: unknown }
-  | { type: "cost"; cost_total?: number; total?: number; stage?: string; provider?: string; [k: string]: unknown };
+  | ({ type: "stage" } & StageRecord)
+  | { type: "status"; status: RunStatus; error: string | null }
+  | { type: "cost"; cost_total: number; budget: number };

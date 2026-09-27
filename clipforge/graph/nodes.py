@@ -57,6 +57,7 @@ from ..retry import PermanentError, retry_async, with_fallback
 from ..schedule import next_slot
 from ..storage import AssetStore, content_key, sha256_bytes, sha256_file
 from ..telemetry import span
+from ..timeline import plan_timeline
 from .state import RESET, RunState, clear_from
 
 log = logging.getLogger(__name__)
@@ -264,35 +265,31 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
         await ctx.asset("voiceover", key, sha, provider=prov.name, duration=dur)
         vo = VoiceOver(audio_path=key, duration=dur, words=res.words, lufs=lufs)
 
-        # Timeline: scale shot lengths to the real VO length; split shots longer than the provider can make.
+        # Timeline: fit shots to the real VO length, choosing billable clip lengths (see timeline.py).
         shots = ShotList.model_validate(state["shot_list"]).shots
         total = max(dur, res.words[-1].end if res.words else dur) + VO_TAIL_S
-        scale = total / sum(s.duration for s in shots)
-        max_clip = providers.video_chain(Tier(state["tier"]))[0].max_clip_seconds * 1.3
-        timeline, t = [], 0.0
-        for s in shots:
-            length = s.duration * scale
-            parts = max(1, math.ceil(length / max_clip))
-            for p in range(parts):
-                seg = length / parts
-                prompt = s.prompt if p == 0 else f"{s.prompt}. Continuation, same subject and style."
-                timeline.append({"index": len(timeline), "shot_index": s.index, "prompt": prompt,
-                                 "negative_prompt": s.negative_prompt, "ref_image": s.ref_image,
-                                 "start": round(t, 3), "duration": round(seg, 3)})
-                t += seg
-        return {"vo": vo.model_dump(), "timeline": timeline, "_output_ref": key}
+        primary = providers.video_chain(Tier(state["tier"]))[0]
+        infos = [{"shot_index": s.index, "prompt": s.prompt, "negative_prompt": s.negative_prompt,
+                  "ref_image": s.ref_image, "length": s.duration} for s in shots]
+        return {"vo": vo.model_dump(), "timeline": build_timeline(infos, total, primary), "_output_ref": key}
 
     # ------------------------------------------------------------------ 4 gen_shots (fan-out)
+    def clip_key(run_id: str, seg: dict, ref_id: str | None, tier: Tier, nonce: int) -> tuple[str, str]:
+        """Content address of a generated clip. `ref_id` identifies the reference frame: a kit image path, or
+        (first_shot mode) the key of shot 0, so later shots' keys are known before the frame is extracted."""
+        want = seg.get("billed") or math.ceil(seg["duration"])
+        cache = _stable_hash({"p": seg["prompt"], "n": seg["negative_prompt"], "d": want, "r": ref_id,
+                              "t": tier.value, "nonce": nonce})
+        return f"runs/{run_id}/clips/{cache[:24]}.mp4", cache
+
     async def generate_clip(payload: dict[str, Any]) -> dict[str, Any]:
         run_id, tier = payload["run_id"], Tier(payload["tier"])
         seg = payload["segment"]
         chain = providers.video_chain(tier)
-        want = seg["duration"]
+        want = seg.get("billed") or math.ceil(seg["duration"])
         ref = seg.get("ref_image") or payload.get("ref_frame")
         nonce = payload.get("nonce", 0)
-        cache = _stable_hash({"p": seg["prompt"], "n": seg["negative_prompt"], "d": math.ceil(want), "r": ref,
-                              "t": tier.value, "nonce": nonce})
-        key = f"runs/{run_id}/clips/{cache[:24]}.mp4"
+        key, cache = clip_key(run_id, seg, seg.get("ref_image") or payload.get("ref_id"), tier, nonce)
         if store.exists(key):
             meta = json.loads(store.local_path(key + ".json").read_text()) if store.exists(key + ".json") else {}
             return Clip(shot_index=seg["index"], path=key, duration=meta.get("duration", want),
@@ -303,7 +300,7 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
                                         estimate=chain[0].estimate(want))
         req = VideoRequest(
             prompt=seg["prompt"], negative_prompt=seg["negative_prompt"],
-            duration=min(math.ceil(want), chain[0].max_clip_seconds), aspect=Aspect.vertical,
+            duration=min(want, chain[0].max_clip_seconds), aspect=Aspect.vertical,
             image_url=store.url(ref, 86400) if ref else None,
             image_path=store.local_path(ref) if ref else None,
             seed=(int(cache[:6], 16) + nonce) % 2**31,
@@ -339,22 +336,43 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
         try:
             tier = Tier(state["tier"])
             timeline = state["timeline"]
-            seconds = sum(math.ceil(s["duration"]) for s in timeline)
-            decision = await deps.ledger.ensure_budget(
-                run_id=run_id, brand_id=state["brand_id"], tier=tier,
-                estimate=providers.video_chain(tier)[0].estimate(seconds),
-                economy_estimate=providers.video_chain(Tier.economy)[0].estimate(seconds),
-            )
-            tier = decision.tier
             brand = await repo.get_brand(state["brand_id"])
             nonce = (state.get("nonce") or {}).get("gen_shots", 0)
+            first_shot = (brand.kit.consistency == "first_shot" and not timeline[0].get("ref_image")
+                          and len(timeline) > 1)
+
+            def ref_ids(t: Tier) -> list[str | None]:
+                k0 = clip_key(run_id, timeline[0], None, t, nonce)[0]
+                return [s.get("ref_image") or (k0 if first_shot and i else None) for i, s in enumerate(timeline)]
+
+            def estimate(t: Tier) -> float:  # only clips not already in the content-addressed store cost money
+                p = providers.video_chain(t)[0]
+                return sum(p.estimate(s["billed"]) for s, r in zip(timeline, ref_ids(t), strict=True)
+                           if not store.exists(clip_key(run_id, s, r, t, nonce)[0]))
+
+            premium_est = estimate(tier)
+            if tier != Tier.economy:  # what the same video would cost re-planned for the economy provider
+                econ_tl = replan(timeline, providers.video_chain(Tier.economy)[0])
+                p = providers.video_chain(Tier.economy)[0]
+                econ_est = sum(p.estimate(s["billed"]) for s in econ_tl)
+            else:
+                econ_tl, econ_est = timeline, premium_est
+            decision = await deps.ledger.ensure_budget(
+                run_id=run_id, brand_id=state["brand_id"], tier=tier,
+                estimate=premium_est, economy_estimate=econ_est)
+            update: dict[str, Any] = {}
+            if decision.downgraded:
+                timeline = econ_tl
+                update["timeline"] = timeline
+                await _snapshot(deps, run_id, {"timeline": timeline})
+            tier = decision.tier
             base = {"run_id": run_id, "brand_id": state["brand_id"], "tier": tier.value, "nonce": nonce}
-            update: dict[str, Any] = {"tier": tier.value}
+            ref_id = ref_ids(tier)[1] if first_shot else None
+            update["tier"] = tier.value
             first: list[dict] = []
             ref_frame = state.get("ref_frame")
             todo = list(timeline)
-            if (brand.kit.consistency == "first_shot" and not timeline[0].get("ref_image") and len(timeline) > 1
-                    and not ref_frame):
+            if first_shot and not ref_frame:
                 clip0 = await generate_clip({**base, "segment": timeline[0]})
                 first = [clip0]
                 with tempfile.TemporaryDirectory() as d:
@@ -373,8 +391,8 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
             raise
         if not todo:
             return Command(goto="collect_shots", update=update)
-        return Command(goto=[Send("gen_shot", {**base, "segment": s, "ref_frame": ref_frame}) for s in todo],
-                       update=update)
+        return Command(goto=[Send("gen_shot", {**base, "segment": s, "ref_frame": ref_frame, "ref_id": ref_id})
+                             for s in todo], update=update)
 
     async def gen_shot(payload: dict[str, Any]):
         try:
@@ -439,8 +457,11 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
             brand=BrandOverlay(logo_path=brand.kit.logo_path, primary_color=brand.kit.colors.get("primary", "#111"),
                                accent_color=brand.kit.colors.get("accent", "#FFD400"),
                                font=brand.kit.fonts[0] if brand.kit.fonts else "Inter", cta_text=sc.cta),
-            output_prefix=f"runs/{state['run_id']}/render/{_stable_hash([state['clips'], vo.audio_path, m, nonce])[:12]}",
+            output_prefix="",
         )
+        # content-address the outputs by the full spec (clips, audio, captions, CTA, brand, template)
+        spec_hash = _stable_hash([spec.model_dump(mode="json"), nonce])[:16]
+        spec.output_prefix = f"runs/{state['run_id']}/render/{spec_hash}"
         renderer = providers.renderer
         result = await renderer.render(spec)
         await ctx.charge(f"{result.renderer}:render", len(result.outputs) if result.renderer == "creatomate" else 0)
@@ -605,6 +626,33 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
         "collect_shots": collect_shots, "music": music, "render": render, "qa": qa, "approve": approve,
         "metadata": metadata, "publish": publish, "finalize": finalize,
     }
+
+
+def build_timeline(infos: list[dict[str, Any]], total: float, provider: Any) -> list[dict[str, Any]]:
+    """Shot infos (shot_index, prompt, negative_prompt, ref_image, length) -> billing-aware timeline entries."""
+    segs = plan_timeline([i["length"] for i in infos], total, provider.supported_durations,
+                         provider.max_clip_seconds)
+    by_idx = {i["shot_index"]: i for i in infos}
+    timeline, t = [], 0.0
+    for seg in segs:
+        s = by_idx[seg.shot_index]
+        prompt = s["prompt"] if seg.part == 0 else f"{s['prompt']}. Continuation, same subject and style."
+        timeline.append({"index": len(timeline), "shot_index": seg.shot_index, "prompt": prompt,
+                         "negative_prompt": s["negative_prompt"], "ref_image": s["ref_image"],
+                         "start": round(t, 3), "duration": seg.length, "billed": seg.billed})
+        t += seg.length
+    return timeline
+
+
+def replan(timeline: list[dict[str, Any]], provider: Any) -> list[dict[str, Any]]:
+    """Re-plan an existing timeline for another provider's billable durations (tier downgrade)."""
+    infos: dict[int, dict[str, Any]] = {}
+    for s in timeline:
+        i = infos.setdefault(s["shot_index"], {"shot_index": s["shot_index"], "prompt": s["prompt"],
+                                               "negative_prompt": s["negative_prompt"],
+                                               "ref_image": s["ref_image"], "length": 0.0})
+        i["length"] += s["duration"]
+    return build_timeline(list(infos.values()), sum(s["duration"] for s in timeline), provider)
 
 
 def webhook_url(settings: Settings, source: str) -> str:

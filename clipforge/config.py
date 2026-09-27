@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     # ---- rendering
     renderer: str = "ffmpeg"  # ffmpeg | remotion | creatomate
     render_overflow_threshold: int = 20  # queued remotion jobs before overflowing to Creatomate
+    x264_preset: str = "medium"  # ultrafast in tests
     ffmpeg_bin: str = "ffmpeg"
     ffprobe_bin: str = "ffprobe"
 
