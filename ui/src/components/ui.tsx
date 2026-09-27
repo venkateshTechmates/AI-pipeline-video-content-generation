@@ -170,6 +170,7 @@ export function PhoneFrame({
   videoRef,
   onTime,
   tracks = [],
+  defaultLang,
 }: {
   src: string | null | undefined;
   poster?: string;
@@ -179,6 +180,7 @@ export function PhoneFrame({
   videoRef?: React.Ref<HTMLVideoElement>;
   onTime?: (t: number) => void;
   tracks?: VideoTrack[];
+  defaultLang?: string;
 }) {
   return (
     <div className="phone">
@@ -199,7 +201,7 @@ export function PhoneFrame({
             onTimeUpdate={onTime ? (e) => onTime(e.currentTarget.currentTime) : undefined}
           >
             {tracks.map((tr) => (
-              <track key={tr.lang} kind="subtitles" src={tr.src} srcLang={tr.lang} label={tr.label} />
+              <track key={tr.lang} kind="subtitles" src={tr.src} srcLang={tr.lang} label={tr.label} default={tr.lang === defaultLang} />
             ))}
           </video>
         ) : (
@@ -225,11 +227,13 @@ export function VideoBox({
   aspect,
   label,
   tracks = [],
+  defaultLang,
 }: {
   src: string | null | undefined;
   aspect: string;
   label?: string;
   tracks?: VideoTrack[];
+  defaultLang?: string;
 }) {
   return (
     <div className={`video-box ar-${aspect.replace(":", "x")}`}>
@@ -243,7 +247,7 @@ export function VideoBox({
           crossOrigin={tracks.length ? "anonymous" : undefined}
         >
           {tracks.map((tr) => (
-            <track key={tr.lang} kind="subtitles" src={tr.src} srcLang={tr.lang} label={tr.label} />
+            <track key={tr.lang} kind="subtitles" src={tr.src} srcLang={tr.lang} label={tr.label} default={tr.lang === defaultLang} />
           ))}
         </video>
       ) : (

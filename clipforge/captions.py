@@ -113,7 +113,8 @@ def to_ass(words: list[WordTiming], style: CaptionStyle, width: int, height: int
     upper = style.uppercase and lang.uppercase
     sep = joiner(lang)
     scale = width / 1080
-    size = int(style.font_size * scale)
+    # Nastaliq sits small on its line box; bump it so Urdu reads at the same visual size
+    size = int(style.font_size * scale * (1.45 if "Nastaliq" in font else 1.0))
     align = {"top": 8, "center": 5, "bottom": 2}[style.position]
     margin_v = int(height * (0.12 if style.position != "center" else 0))
     header = f"""[Script Info]
@@ -131,15 +132,23 @@ Style: Cap,{font},{size},{_ass_color(style.color)},{_ass_color(style.highlight_c
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     hl = _ass_color(style.highlight_color)
+    base = _ass_color(style.color)
+    base_alt = base[:-2] + f"{(int(base[-2:], 16) ^ 1):02X}"  # same colour, 1/255 off in one channel
     lines = []
     for group in group_words(words, style.words_per_line, lang):
         texts = [(w.word.upper() if upper else w.word) for w in group]
         for i, w in enumerate(group):
             start = w.start
             end = group[i + 1].start if i + 1 < len(group) else w.end
-            parts = [
-                f"{{\\c{hl}}}{_esc(t)}{{\\r}}" if j == i else _esc(t) for j, t in enumerate(texts)
-            ]
+            if lang.rtl:
+                # libass reorders style runs right-to-left but keeps words inside one run in logical order,
+                # so give every word its own run (alternating imperceptibly different colours).
+                parts = [f"{{\\1c{hl if j == i else (base if j % 2 == 0 else base_alt)}&}}{_esc(t)}"
+                         for j, t in enumerate(texts)]
+            else:
+                parts = [
+                    f"{{\\c{hl}}}{_esc(t)}{{\\r}}" if j == i else _esc(t) for j, t in enumerate(texts)
+                ]
             lines.append(f"Dialogue: 0,{_ass_time(start)},{_ass_time(max(end, start + 0.05))},Cap,,0,0,0,,"
                          + sep.join(parts))
     return header + "\n".join(lines) + "\n"

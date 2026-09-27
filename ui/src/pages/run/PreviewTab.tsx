@@ -25,6 +25,8 @@ export function PreviewTab({ d, brand }: { d: RunDetail; brand: Brand | null }) 
   const tracks: VideoTrack[] = subtitles
     .filter((s) => s.translated && s.vtt_url)
     .map((s) => ({ lang: s.language, label: languageLabel(langs, s.language), src: s.vtt_url as string }));
+  // viewers see subtitles in their own language by default when the video's narration is in another one
+  const viewerLang = (typeof navigator !== "undefined" ? navigator.language : "en").split("-")[0];
 
   if (!renders.length && !clips.length)
     return (
@@ -52,9 +54,9 @@ export function PreviewTab({ d, brand }: { d: RunDetail; brand: Brand | null }) 
           >
             <div className={`player-stage ar-stage-${(cur?.aspect ?? "9:16").replace(":", "x")}`}>
               {cur?.aspect === "9:16" ? (
-                <PhoneFrame src={cur.url} videoRef={videoRef} onTime={setT} label="9:16 render" tracks={tracks} />
+                <PhoneFrame src={cur.url} videoRef={videoRef} onTime={setT} label="9:16 render" tracks={tracks} defaultLang={viewerLang} />
               ) : (
-                <VideoBox src={cur?.url} aspect={cur?.aspect ?? aspect} tracks={tracks} />
+                <VideoBox src={cur?.url} aspect={cur?.aspect ?? aspect} tracks={tracks} defaultLang={viewerLang} />
               )}
             </div>
             {cur && (

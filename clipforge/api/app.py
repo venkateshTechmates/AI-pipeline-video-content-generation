@@ -100,6 +100,20 @@ def create_app(settings: Settings | None = None, app_state: App | None = None,
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
+    @api.get("/locale")
+    async def locale(request: Request, region: str | None = None) -> dict[str, Any]:
+        """Default content language for this viewer: ?region=, else CDN geo headers, else Accept-Language."""
+        from ..regions import suggest_locale
+
+        return suggest_locale(dict(request.headers), region)
+
+    @api.get("/regions")
+    async def regions() -> dict[str, Any]:
+        from ..regions import all_regions
+
+        return {"items": [{"code": r.code, "name": r.name, "language": r.language,
+                           "subtitle_languages": list(r.subtitles)} for r in all_regions()]}
+
     @api.get("/languages")
     async def languages() -> dict[str, Any]:
         from ..languages import LANGUAGES
@@ -117,6 +131,8 @@ def create_app(settings: Settings | None = None, app_state: App | None = None,
     async def upsert_brand(request: Request, p: Auth, brand: Brand) -> dict[str, Any]:
         if p.org_ids is not None and brand.org_id not in p.org_ids:
             raise HTTPException(403, "not a member of this org")
+        if brand.kit.region and "language" not in brand.kit.model_fields_set:
+            brand.kit.apply_region_defaults()
         await cf(request).repo.upsert_brand(brand)
         return brand.model_dump(mode="json")
 
@@ -151,6 +167,8 @@ def create_app(settings: Settings | None = None, app_state: App | None = None,
         fields = body.model_dump(exclude_unset=True, exclude={"kit"})
         try:
             kit = BrandKit.model_validate({**brand.kit.model_dump(mode="json"), **(body.kit or {})})
+            if (body.kit or {}).get("region") and "language" not in (body.kit or {}):
+                kit.apply_region_defaults()  # new location → its language, unless the patch picked one
             merged = {**brand.model_dump(mode="json"), **fields, "kit": kit.model_dump(mode="json")}
             brand = Brand.model_validate(merged)
         except ValidationError as e:
@@ -204,11 +222,18 @@ def create_app(settings: Settings | None = None, app_state: App | None = None,
             brand = await cf(request).repo.get_brand(body.brand_id)
         except NotFound:
             raise HTTPException(404, "brand not found") from None
+        from ..regions import get_region
+
+        region = get_region(body.region) if body.region else None
+        if body.region and region is None:
+            raise HTTPException(422, f"unknown region {body.region!r}")
+        language = body.language or (region.language if region else brand.kit.language)
+        subtitles = (body.subtitle_languages if body.subtitle_languages is not None
+                     else list(region.subtitles) if region else brand.kit.subtitle_languages)
         run = Run(brand_id=brand.id, brief=body.brief, tier=body.tier or brand.tier,
                   budget=body.budget or brand.budget_per_run, schedule=body.schedule,
-                  platforms=body.platforms or brand.kit.platforms, language=body.language or brand.kit.language,
-                  subtitle_languages=(body.subtitle_languages if body.subtitle_languages is not None
-                                      else brand.kit.subtitle_languages))
+                  platforms=body.platforms or brand.kit.platforms, language=language,
+                  subtitle_languages=[s for s in subtitles if s != language], region=region.code if region else None)
         await cf(request).repo.create_run(run)
         return {"run_id": run.id}
 

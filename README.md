@@ -93,9 +93,18 @@ brand kit's language; set it per brand on the Brands page, per run on the New ru
 subtitle files (SRT and WebVTT) with the same cue timing as the narration. They are listed on the run's
 Preview tab, where the player offers them as CC tracks.
 
-Supported: English, Spanish, French, German, Portuguese, Italian, Dutch, Polish, Turkish, Russian,
-Ukrainian, Indonesian, Vietnamese, Hindi, Marathi, Bengali, Tamil, Telugu, Kannada, Malayalam, Arabic,
-Japanese, Korean, Chinese (Simplified) and Thai (`GET /languages`).
+Supported (`GET /languages`): English, Spanish, French, German, Portuguese, Italian, Dutch, Polish,
+Turkish, Russian, Ukrainian, Indonesian, Vietnamese, Arabic, Japanese, Korean, Chinese (Simplified), Thai,
+and the Indian languages Hindi, Telugu, Tamil, Kannada, Malayalam, Bengali, Marathi, Gujarati, Punjabi,
+Odia, Assamese, Urdu, Nepali, Konkani and Sindhi.
+
+**Location → language.** Set an audience region on the brand (`kit.region`, e.g. `IN-TG` for Telangana)
+or per run: it picks the default language and subtitles (Telangana → Telugu + English/Hindi subtitles,
+Tamil Nadu → Tamil, Gujarat → Gujarati, Japan → Japanese + English…) and tells the script writer to use
+locally relevant examples. All Indian states/UTs and ~55 countries are mapped (`GET /regions`).
+`GET /locale` suggests the current viewer's locale from CDN geo headers (Cloudflare, Vercel, CloudFront)
+or the browser's `Accept-Language`; the review UI offers it with one click ("Use my location") and
+the player defaults subtitles to the viewer's language.
 
 - Claude writes the hook, script and captions natively in the language. Shot prompts stay in English,
   which video models follow best.

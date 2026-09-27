@@ -186,6 +186,29 @@ class BrandKit(BaseModel):
     language: str = "en"
     subtitle_languages: list[str] = Field(default_factory=list)
     voices: dict[str, str] = Field(default_factory=dict)  # per-language voice ids; falls back to voice_id
+    # Audience location (ISO 3166 "IN" / "IN-TG"): default language + subtitles, and local references in scripts.
+    region: str | None = None
+
+    @field_validator("region")
+    @classmethod
+    def _region_ok(cls, v: str | None) -> str | None:
+        if not v:
+            return None
+        from .regions import get_region
+
+        r = get_region(v)
+        if r is None:
+            raise ValueError(f"unknown region {v!r} (use ISO 3166 like 'IN' or 'IN-TG')")
+        return r.code
+
+    def apply_region_defaults(self) -> None:
+        """Set language + subtitle languages from the region (used when they weren't chosen explicitly)."""
+        from .regions import get_region
+
+        r = get_region(self.region)
+        if r:
+            self.language = r.language
+            self.subtitle_languages = list(r.subtitles)
 
     @field_validator("language")
     @classmethod
@@ -428,8 +451,9 @@ class RunCreate(BaseModel):
     schedule: datetime | None = None  # explicit publish time; else brand calendar
     platforms: list[Platform] | None = None
     budget: float | None = None
-    language: str | None = None  # voice + captions; defaults to the brand kit language
+    language: str | None = None  # voice + captions; defaults to the region's language, then the brand kit's
     subtitle_languages: list[str] | None = None  # extra translated subtitle files
+    region: str | None = None  # audience location for this run (ISO 3166); sets language defaults
 
     @field_validator("language")
     @classmethod
@@ -458,6 +482,7 @@ class Run(BaseModel):
     pending_decision: dict[str, Any] | None = None  # approval decision waiting for the worker to resume
     language: str = "en"
     subtitle_languages: list[str] = Field(default_factory=list)
+    region: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 

@@ -5,6 +5,8 @@ import type {
   BrandCosts,
   BrandPatch,
   LanguageInfo,
+  LocaleSuggestion,
+  RegionInfo,
   QueueItem,
   Run,
   RunCreateBody,
@@ -90,6 +92,11 @@ export const api = {
   brands: () => request<{ items: Brand[] }>("GET", "/brands"),
 
   languages: () => request<{ items: LanguageInfo[] }>("GET", "/languages"),
+
+  regions: () => request<{ items: RegionInfo[] }>("GET", "/regions"),
+
+  /** Default content language for this viewer (CDN geo headers, else the browser's Accept-Language). */
+  locale: (region?: string) => request<LocaleSuggestion>("GET", "/locale", { query: { region } }),
 
   brand: (id: string) => request<Brand>("GET", `/brands/${encodeURIComponent(id)}`),
 

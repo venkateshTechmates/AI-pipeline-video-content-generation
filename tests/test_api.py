@@ -210,3 +210,31 @@ async def test_traces_api(client, cf):
     prov = next(x for x in st["providers"] if x["name"] == "fal:kling-3.0")
     assert prov["calls"] == 2 and prov["errors"] == 1 and prov["cost"] == 0.42 and prov["p95_ms"] > prov["p50_ms"]
     assert any(x["name"] == "gen_shot" for x in st["stages"]) and st["throughput"][0]["runs"] >= 1
+
+
+async def test_region_drives_default_language(client, cf):
+    b = demo_brand()
+    await cf.repo.upsert_brand(b)
+    d = client.patch(f"/brands/{b.id}", json={"kit": {"region": "in-tg"}}).json()
+    assert d["kit"]["region"] == "IN-TG" and d["kit"]["language"] == "te"
+    assert d["kit"]["subtitle_languages"] == ["en", "hi"]
+    # an explicit language wins over the region default
+    d = client.patch(f"/brands/{b.id}", json={"kit": {"region": "IN-TN", "language": "en"}}).json()
+    assert d["kit"]["language"] == "en" and d["kit"]["region"] == "IN-TN"
+    # per-run region
+    rid = client.post("/runs", json={"brand_id": b.id, "region": "IN-UP"}).json()["run_id"]
+    run = client.get(f"/runs/{rid}").json()["run"]
+    assert run["language"] == "hi" and run["subtitle_languages"] == ["en"] and run["region"] == "IN-UP"
+    assert client.post("/runs", json={"brand_id": b.id, "region": "ZZ"}).status_code == 422
+    assert client.patch(f"/brands/{b.id}", json={"kit": {"region": "Atlantis"}}).status_code == 422
+    # viewer locale
+    loc = client.get("/locale", headers={"CF-IPCountry": "IN", "X-Vercel-IP-Country-Region": "TN"}).json()
+    assert loc["language"] == "ta" and loc["source"] == "geo" and loc["region"] == "IN-TN"
+    loc = client.get("/locale", headers={"Accept-Language": "te-IN,te;q=0.9,en;q=0.8"}).json()
+    assert loc["language"] == "te" and loc["source"] == "accept-language"
+    assert client.get("/locale", params={"region": "IN-KA"}).json()["language"] == "kn"
+    regions = {r["code"]: r for r in client.get("/regions").json()["items"]}
+    assert regions["IN-AP"]["language"] == "te" and regions["IN-GJ"]["language"] == "gu"
+    # new Indian languages validate
+    for code in ("gu", "pa", "or", "as", "ur", "ne", "kok"):
+        assert client.patch(f"/brands/{b.id}", json={"kit": {"language": code}}).status_code == 200

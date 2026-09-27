@@ -439,16 +439,16 @@ class PostgresRepo:
             budget=float(r["budget"]), cost_total=float(r["cost_total"]), checkpoint_id=r["checkpoint_id"],
             schedule=r["schedule"], platforms=r["platforms"], error=r["error"], attempts=r["attempts"],
             pending_decision=r.get("pending_decision"), language=r.get("language") or "en",
-            subtitle_languages=r.get("subtitle_languages") or [], created_at=r["created_at"],
+            subtitle_languages=r.get("subtitle_languages") or [], region=r.get("region"), created_at=r["created_at"],
             updated_at=r["updated_at"],
         )
 
     async def create_run(self, run: Run) -> Run:
         await self._one(
             """insert into runs (id, brand_id, brief, status, tier, budget, schedule, platforms, language,
-                 subtitle_languages) values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                 subtitle_languages, region) values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             run.id, run.brand_id, run.brief, run.status, run.tier, run.budget, run.schedule,
-            [p.value for p in run.platforms], run.language, run.subtitle_languages,
+            [p.value for p in run.platforms], run.language, run.subtitle_languages, run.region,
         )
         return run
 
@@ -459,7 +459,8 @@ class PostgresRepo:
         return self._run(r)
 
     _RUN_COLS = {"status", "tier", "budget", "cost_total", "checkpoint_id", "schedule", "error", "attempts",
-                 "brief", "platforms", "pending_decision", "language", "subtitle_languages"}
+                 "brief", "platforms", "pending_decision", "language", "subtitle_languages",
+                 "region"}
 
     async def update_run(self, run_id: str, **fields: Any) -> Run:
         bad = set(fields) - self._RUN_COLS

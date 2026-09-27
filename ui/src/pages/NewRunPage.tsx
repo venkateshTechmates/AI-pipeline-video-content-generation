@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { LanguagePicker, languageLabel, useLanguages } from "../components/LanguagePicker";
+import { LanguagePicker, RegionSelect, languageLabel, useLanguages, useLocaleSuggestion } from "../components/LanguagePicker";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, CalendarClock, Crown, Rocket, Zap } from "lucide-react";
+import { LocateFixed, AlertTriangle, CalendarClock, Crown, Rocket, Zap } from "lucide-react";
 import { api } from "../api";
 import { PLATFORM_LABEL, PlatformIcon } from "../components/icons";
 import { ErrorBox, PageHeader, Spinner } from "../components/ui";
@@ -53,7 +53,9 @@ export function NewRunPage() {
   const [platforms, setPlatforms] = useState<Platform[]>([...ALL_PLATFORMS]);
   const [language, setLanguage] = useState("en");
   const [subtitles, setSubtitles] = useState<string[]>([]);
+  const [region, setRegion] = useState<string | null>(null);
   const langs = useLanguages();
+  const suggestion = useLocaleSuggestion();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -70,6 +72,7 @@ export function NewRunPage() {
     setPlatforms(brand.kit?.platforms?.length ? [...brand.kit.platforms] : [...ALL_PLATFORMS]);
     setLanguage(brand.kit?.language ?? "en");
     setSubtitles([...(brand.kit?.subtitle_languages ?? [])]);
+    setRegion(brand.kit?.region ?? null);
     setBudget(String(brand.budget_per_run));
   }, [brand?.id]);
 
@@ -93,6 +96,7 @@ export function NewRunPage() {
         platforms,
         language,
         subtitle_languages: subtitles,
+        region: region ?? undefined,
         budget: budget && Number(budget) !== brand?.budget_per_run ? Number(budget) : undefined,
       });
       toast({ tone: "success", title: "Run started", body: "Follow it live on the run page." });
@@ -242,6 +246,44 @@ export function NewRunPage() {
               </div>
               {platforms.length === 0 && <span className="tone-text-danger small">Pick at least one platform.</span>}
             </fieldset>
+            {suggestion && suggestion.source !== "default" && !brand?.kit?.region && suggestion.language !== language && (
+              <div className="locale-hint" role="status">
+                <LocateFixed size={15} aria-hidden />
+                <span className="grow">
+                  For {suggestion.region_name ?? "your location"}: <strong>{languageLabel(langs, suggestion.language)}</strong>
+                  {suggestion.subtitle_languages.length > 0 && (
+                    <span className="muted"> · subtitles {suggestion.subtitle_languages.join(", ")}</span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => {
+                    setLanguage(suggestion.language);
+                    setSubtitles(suggestion.subtitle_languages);
+                    setRegion(suggestion.region);
+                  }}
+                >
+                  Use
+                </button>
+              </div>
+            )}
+            <label className="field">
+              <span className="field-label">
+                Audience region <span className="field-hint">localises the script; sets the language</span>
+              </span>
+              <RegionSelect
+                value={region}
+                allowEmpty={brand?.kit?.region ? "Brand default" : "Not set"}
+                onChange={(r) => {
+                  setRegion(r?.code ?? null);
+                  if (r) {
+                    setLanguage(r.language);
+                    setSubtitles(r.subtitle_languages);
+                  }
+                }}
+              />
+            </label>
             <LanguagePicker
               language={language}
               subtitles={subtitles}

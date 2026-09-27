@@ -210,7 +210,7 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
 
         kept: list[tuple[Hook, float]] = []
         for attempt in range(2):
-            ideas, tok = await llm.ideate(brand.kit, state.get("brief"), texts, n=5 + 3 * attempt,
+            ideas, tok = await llm.ideate(_kit(brand, state), state.get("brief"), texts, n=5 + 3 * attempt,
                                           language=_lang(state))
             await ctx.charge_llm(tok)
             hook_vecs = await llm.embed([h.text for h in ideas.hooks])
@@ -234,7 +234,7 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
         hook = Hook.model_validate(state["hook"])
         pkg: ScriptPackage | None = None
         for _ in range(2):
-            pkg, tok = await llm.script(brand.kit, hook, state.get("brief"), tier, chain[0].max_clip_seconds,
+            pkg, tok = await llm.script(_kit(brand, state), hook, state.get("brief"), tier, chain[0].max_clip_seconds,
                                         language=_lang(state))
             await ctx.charge_llm(tok)
             text = "\n".join([pkg.script.vo_text, *(s.prompt for s in pkg.shot_list.shots)])
@@ -593,7 +593,7 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
         brand = await repo.get_brand(state["brand_id"])
         sc = Script.model_validate(state["script"])
         platforms = [Platform(p) for p in state["platforms"]]
-        bundle, tok = await llm.metadata(brand.kit, sc, platforms, language=_lang(state))
+        bundle, tok = await llm.metadata(_kit(brand, state), sc, platforms, language=_lang(state))
         await ctx.charge_llm(tok)
         by_p = {i.platform: i for i in bundle.items}
 
@@ -706,6 +706,11 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
 
 def _lang(state: RunState) -> str:
     return state.get("language") or "en"
+
+
+def _kit(brand: Brand, state: RunState):
+    """Brand kit with the run's audience region (if the run overrides it) for the script writer."""
+    return brand.kit.model_copy(update={"region": state["region"]}) if state.get("region") else brand.kit
 
 
 def build_timeline(infos: list[dict[str, Any]], total: float, provider: Any) -> list[dict[str, Any]]:

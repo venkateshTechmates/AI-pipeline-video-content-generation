@@ -1,7 +1,7 @@
 import { Languages } from "lucide-react";
 import { api } from "../api";
 import { useAsync } from "../hooks";
-import type { LanguageInfo } from "../types";
+import type { LanguageInfo, LocaleSuggestion, RegionInfo } from "../types";
 
 let cache: LanguageInfo[] | null = null;
 
@@ -70,5 +70,52 @@ export function LanguagePicker({
         </div>
       </fieldset>
     </div>
+  );
+}
+
+let regionCache: RegionInfo[] | null = null;
+
+export function useRegions(): RegionInfo[] {
+  const r = useAsync(async () => regionCache ?? (regionCache = (await api.regions()).items), []);
+  return r.data ?? [];
+}
+
+/** The viewer's suggested content locale (geo / browser language). */
+export function useLocaleSuggestion(): LocaleSuggestion | null {
+  const r = useAsync(() => api.locale(), []);
+  return r.data;
+}
+
+/** Audience region: picking one fills in its language and subtitles (callers decide). */
+export function RegionSelect({
+  value,
+  onChange,
+  allowEmpty = "Not set",
+}: {
+  value: string | null | undefined;
+  onChange: (region: RegionInfo | null) => void;
+  allowEmpty?: string;
+}) {
+  const regions = useRegions();
+  const india = regions.filter((r) => r.code.startsWith("IN-"));
+  const countries = regions.filter((r) => !r.code.startsWith("IN-"));
+  return (
+    <select value={value ?? ""} onChange={(e) => onChange(regions.find((r) => r.code === e.target.value) ?? null)}>
+      <option value="">{allowEmpty}</option>
+      <optgroup label="India — states & territories">
+        {india.map((r) => (
+          <option key={r.code} value={r.code}>
+            {r.name.replace(", India", "")}
+          </option>
+        ))}
+      </optgroup>
+      <optgroup label="Countries">
+        {countries.map((r) => (
+          <option key={r.code} value={r.code}>
+            {r.name}
+          </option>
+        ))}
+      </optgroup>
+    </select>
   );
 }

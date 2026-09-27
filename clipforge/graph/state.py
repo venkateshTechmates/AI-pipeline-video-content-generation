@@ -32,6 +32,7 @@ class RunState(TypedDict, total=False):
     platforms: list[str]
     language: str
     subtitle_languages: list[str]
+    region: str | None
     nonce: dict[str, int]  # bumped per regenerate(stage) to bust content-addressed caches
     rejected_hooks: list[str]
 

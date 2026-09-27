@@ -206,6 +206,7 @@ create trigger cost_ledger_rollup after insert on cost_ledger for each row execu
 -- ------------------------------------------------------------------ multilingual (idempotent for existing DBs)
 alter table runs add column if not exists language text not null default 'en';
 alter table runs add column if not exists subtitle_languages text[] not null default '{}';
+alter table runs add column if not exists region text;
 
 -- ------------------------------------------------------------------ tracing (tracing app)
 create table if not exists trace_spans (

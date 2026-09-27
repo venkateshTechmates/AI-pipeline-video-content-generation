@@ -101,7 +101,7 @@ async def execute(app: App, run: Run) -> Run:
     else:
         inp = {"run_id": run.id, "brand_id": run.brand_id, "tier": run.tier.value, "brief": run.brief,
                "platforms": [p.value for p in run.platforms], "nonce": {}, "language": run.language,
-               "subtitle_languages": run.subtitle_languages}
+               "subtitle_languages": run.subtitle_languages, "region": run.region}
     await repo.update_run(run.id, status=RunStatus.running, error=None)
     try:
         async with tracing.tracer().span(

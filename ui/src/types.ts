@@ -168,6 +168,7 @@ export interface Run {
   pending_decision: ApprovalDecision | null;
   language: string;
   subtitle_languages: string[];
+  region?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -248,6 +249,7 @@ export interface BrandKit {
   language?: string;
   subtitle_languages?: string[];
   voices?: Record<string, string>;
+  region?: string | null;
   hashtags: string[];
   consistency: "reference" | "first_shot" | "none";
 }
@@ -277,7 +279,7 @@ export interface BrandPatch {
   daily_budget?: number;
   auto_approve_after?: number;
   publisher?: Brand["publisher"];
-  kit?: Partial<BrandKit>;
+  kit?: Partial<Omit<BrandKit, "region">> & { region?: string | null };
 }
 
 // ---------------------------------------------------------------- API shapes
@@ -360,6 +362,21 @@ export interface SubtitleTrack {
   vtt_url: string | null;
 }
 
+export interface RegionInfo {
+  code: string;
+  name: string;
+  language: string;
+  subtitle_languages: string[];
+}
+
+export interface LocaleSuggestion {
+  region: string | null;
+  region_name: string | null;
+  language: string;
+  subtitle_languages: string[];
+  source: "region" | "geo" | "accept-language" | "default";
+}
+
 export interface LanguageInfo {
   code: string;
   name: string;
@@ -388,6 +405,7 @@ export interface RunCreateBody {
   budget?: number;
   language?: string;
   subtitle_languages?: string[];
+  region?: string;
 }
 
 export interface CostDay {

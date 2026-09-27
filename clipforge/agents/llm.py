@@ -84,8 +84,13 @@ def _lang_rule(code: str, what: str) -> str:
 
 
 def _kit_brief(kit: BrandKit) -> str:
+    from ..regions import get_region
+
+    region = get_region(kit.region)
+    local = (f"Audience location: {region.name}. Make examples, names, places, food, festivals and everyday "
+             f"situations locally relevant and culturally appropriate for this audience.\n") if region else ""
     return (
-        f"Niche: {kit.niche}\nAudience: {kit.audience}\nTone: {kit.tone}\n"
+        f"Niche: {kit.niche}\nAudience: {kit.audience}\nTone: {kit.tone}\n{local}"
         f"Banned topics (never touch): {', '.join(kit.banned_topics) or 'none'}\n"
     )
 

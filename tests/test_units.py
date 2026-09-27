@@ -320,3 +320,14 @@ def test_tokenize_unspaced_scripts_keep_punctuation_with_previous_chunk():
     assert all(not t.startswith(("！", "、", "。")) for t in toks)
     assert any(t.endswith("！") for t in toks) and toks[-1].endswith("。")
     assert tokenize("Hola mundo, qué tal", "es") == ["Hola", "mundo,", "qué", "tal"]
+
+
+def test_ass_rtl_and_indic_fonts():
+    from clipforge.captions import estimate_word_timings, to_ass
+
+    ur = to_ass(estimate_word_timings("ہیرو کیپ کے ساتھ", 2, lang="ur"), CaptionStyle(), 1080, 1920, "ur")
+    assert "Style: Cap,Noto Nastaliq Urdu," in ur
+    first = next(line for line in ur.splitlines() if line.startswith("Dialogue"))
+    assert first.count("\\1c") == 3  # (3 words a line) one colour run per word so libass orders them right-to-left
+    te = to_ass(estimate_word_timings("హీరోలు కేప్‌లతో", 1, lang="te"), CaptionStyle(uppercase=True), 1080, 1920, "te")
+    assert "Style: Cap,Noto Sans Telugu," in te and "హీరోలు" in te  # no uppercasing of caseless scripts
