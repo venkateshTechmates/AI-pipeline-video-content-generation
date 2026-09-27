@@ -75,13 +75,18 @@ async def _run_once(brand_id: str | None, brief: str | None, approve: bool, lang
         await app.aclose()
 
 
-async def _seed() -> None:
+async def _seed(preset: str | None = None) -> None:
     from .orchestrator import create_app_state
-    from .seed import demo_brand
+    from .seed import PRESETS, demo_brand
 
     app = await create_app_state()
     try:
-        b = demo_brand()
+        if preset:
+            if preset not in PRESETS:
+                sys.exit(f"unknown preset {preset!r}; available: {', '.join(PRESETS)}")
+            b = PRESETS[preset]
+        else:
+            b = demo_brand()
         await app.repo.upsert_brand(b)
         print(b.id)
     finally:
@@ -161,7 +166,8 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("--approve", action="store_true", help="approve at the review gate and publish")
     r.add_argument("--language", help="voice + caption language, e.g. es, hi, ja (default: brand kit)")
     r.add_argument("--subtitles", help="comma-separated extra subtitle languages, e.g. en,es,fr")
-    sub.add_parser("seed")
+    sd = sub.add_parser("seed")
+    sd.add_argument("--preset", help="brand preset, e.g. baby-stories-hindi")
     c = sub.add_parser("cron")
     c.add_argument("job", choices=["calendar", "metrics", "refresh-tokens", "recover"])
     m = sub.add_parser("migrate")
@@ -181,7 +187,7 @@ def main(argv: list[str] | None = None) -> None:
             subs = [s.strip() for s in args.subtitles.split(",") if s.strip()] if args.subtitles else None
             asyncio.run(_run_once(args.brand, args.brief, args.approve, args.language, subs))
         case "seed":
-            asyncio.run(_seed())
+            asyncio.run(_seed(args.preset))
         case "cron":
             asyncio.run(_cron(args.job))
         case "migrate":

@@ -15,7 +15,7 @@ import httpx
 from ..ledger import price
 from ..models import Aspect
 from ..ratelimit import bucket
-from .base import ProviderError, VideoRequest, VideoResult
+from .base import ProviderError, VideoRequest, VideoResult, styled_prompt
 from .jobs import JobWaiter, get_waiter
 
 QUEUE = "https://queue.fal.run"
@@ -83,7 +83,7 @@ class FalVideo:
         dur = snap_duration(req.duration, self.m.durations)
         endpoint = self.m.i2v if (req.image_url or req.image_path) else self.m.t2v
         body: dict = {
-            "prompt": req.prompt,
+            "prompt": styled_prompt(req),
             "duration": str(int(dur)) if self.m.duration_as_str else dur,
             "aspect_ratio": req.aspect.value,
         }

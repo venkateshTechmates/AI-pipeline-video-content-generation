@@ -280,7 +280,7 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
         total = max(dur, res.words[-1].end if res.words else dur) + VO_TAIL_S
         primary = providers.video_chain(Tier(state["tier"]))[0]
         infos = [{"shot_index": s.index, "prompt": s.prompt, "negative_prompt": s.negative_prompt,
-                  "ref_image": s.ref_image, "length": s.duration} for s in shots]
+                  "ref_image": s.ref_image, "length": s.duration, "style": brand.kit.visual_style} for s in shots]
         return {"vo": vo.model_dump(), "timeline": build_timeline(infos, total, primary), "_output_ref": key}
 
     # ------------------------------------------------------------------ 4 gen_shots (fan-out)
@@ -288,8 +288,8 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
         """Content address of a generated clip. `ref_id` identifies the reference frame: a kit image path, or
         (first_shot mode) the key of shot 0, so later shots' keys are known before the frame is extracted."""
         want = seg.get("billed") or math.ceil(seg["duration"])
-        cache = _stable_hash({"p": seg["prompt"], "n": seg["negative_prompt"], "d": want, "r": ref_id,
-                              "t": tier.value, "nonce": nonce})
+        cache = _stable_hash({"p": seg["prompt"], "s": seg.get("style", ""), "n": seg["negative_prompt"],
+                              "d": want, "r": ref_id, "t": tier.value, "nonce": nonce})
         return f"runs/{run_id}/clips/{cache[:24]}.mp4", cache
 
     async def generate_clip(payload: dict[str, Any]) -> dict[str, Any]:
@@ -310,7 +310,7 @@ def build_nodes(deps: Deps) -> dict[str, Any]:
         await deps.ledger.ensure_budget(run_id=run_id, brand_id=payload["brand_id"], tier=tier,
                                         estimate=chain[0].estimate(want))
         req = VideoRequest(
-            prompt=seg["prompt"], negative_prompt=seg["negative_prompt"],
+            prompt=seg["prompt"], style=seg.get("style", ""), negative_prompt=seg["negative_prompt"],
             duration=min(want, chain[0].max_clip_seconds), aspect=Aspect.vertical,
             image_url=store.url(ref, 86400) if ref else None,
             image_path=store.local_path(ref) if ref else None,
@@ -724,7 +724,8 @@ def build_timeline(infos: list[dict[str, Any]], total: float, provider: Any) -> 
         prompt = s["prompt"] if seg.part == 0 else f"{s['prompt']}. Continuation, same subject and style."
         timeline.append({"index": len(timeline), "shot_index": seg.shot_index, "prompt": prompt,
                          "negative_prompt": s["negative_prompt"], "ref_image": s["ref_image"],
-                         "start": round(t, 3), "duration": seg.length, "billed": seg.billed})
+                         "style": s.get("style", ""), "start": round(t, 3), "duration": seg.length,
+                         "billed": seg.billed})
         t += seg.length
     return timeline
 
@@ -735,7 +736,8 @@ def replan(timeline: list[dict[str, Any]], provider: Any) -> list[dict[str, Any]
     for s in timeline:
         i = infos.setdefault(s["shot_index"], {"shot_index": s["shot_index"], "prompt": s["prompt"],
                                                "negative_prompt": s["negative_prompt"],
-                                               "ref_image": s["ref_image"], "length": 0.0})
+                                               "ref_image": s["ref_image"], "style": s.get("style", ""),
+                                               "length": 0.0})
         i["length"] += s["duration"]
     return build_timeline(list(infos.values()), sum(s["duration"] for s in timeline), provider)
 

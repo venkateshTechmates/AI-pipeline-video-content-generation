@@ -186,7 +186,9 @@ class LLM:
             return out
 
         await bucket("anthropic").acquire()
-        prompt = (f"{_kit_brief(kit)}\nVisual style guidance: avoid {', '.join(kit.negative_prompts)}.\n"
+        avoid = ", ".join(kit.negative_prompts)
+        prompt = (f"{_kit_brief(kit)}\nVisual style of every shot: {kit.visual_style}. Write shot prompts that "
+                  f"fit that style (subjects, wardrobe, setting, lens, light); avoid {avoid}.\n"
                   f"Brief: {brief or '-'}\nHook: {hook.text}\nAngle: {hook.angle}\n"
                   f"Tier: {tier.value} ({'longer single shots allowed' if tier == Tier.premium else 'max 10 s shots'})"
                   + _lang_rule(language, "title, hook, beats, vo_text, caption_text and cta (keep the shot "

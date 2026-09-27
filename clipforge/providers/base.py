@@ -26,6 +26,7 @@ class ProviderError(Exception):
 
 class VideoRequest(BaseModel):
     prompt: str
+    style: str = ""  # brand visual style; text-to-video providers prepend it, local animation ignores it
     negative_prompt: str = ""
     duration: float
     aspect: Aspect = Aspect.vertical
@@ -34,6 +35,10 @@ class VideoRequest(BaseModel):
     seed: int | None = None
     generate_audio: bool = False
     webhook_url: str | None = None
+
+
+def styled_prompt(req: VideoRequest) -> str:
+    return f"{req.style}. {req.prompt}" if req.style and req.style.lower() not in req.prompt.lower() else req.prompt
 
 
 class VideoResult(BaseModel):

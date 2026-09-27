@@ -15,7 +15,7 @@ import httpx
 
 from ..ledger import price
 from ..ratelimit import bucket
-from .base import ProviderError, VideoRequest, VideoResult
+from .base import ProviderError, VideoRequest, VideoResult, styled_prompt
 from .jobs import JobWaiter, get_waiter
 
 GEMINI = "https://generativelanguage.googleapis.com/v1beta"
@@ -71,7 +71,7 @@ class VeoVideo:
 
     async def generate(self, req: VideoRequest) -> VideoResult:
         dur = self._snap(req.duration)
-        instance: dict = {"prompt": req.prompt}
+        instance: dict = {"prompt": styled_prompt(req)}
         if req.image_path:
             instance["image"] = {
                 "bytesBase64Encoded": base64.b64encode(req.image_path.read_bytes()).decode(),

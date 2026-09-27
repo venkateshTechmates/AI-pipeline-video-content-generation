@@ -167,6 +167,8 @@ class BrandKit(BaseModel):
     negative_prompts: list[str] = Field(
         default_factory=lambda: ["text", "watermark", "logo", "distorted hands", "low quality"]
     )
+    # Look of every generated shot; prepended to shot prompts sent to Veo/Kling (the animated fallback ignores it).
+    visual_style: str = "photorealistic, cinematic, natural lighting, shallow depth of field, 4K, no text"
     banned_topics: list[str] = Field(default_factory=list)
     tone: str = "energetic, concise, helpful"
     audience: str = "general social media audience"

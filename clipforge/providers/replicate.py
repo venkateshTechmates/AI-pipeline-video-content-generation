@@ -8,7 +8,7 @@ import httpx
 
 from ..ledger import price
 from ..ratelimit import bucket
-from .base import ProviderError, VideoRequest, VideoResult
+from .base import ProviderError, VideoRequest, VideoResult, styled_prompt
 from .jobs import JobWaiter, get_waiter
 
 API = "https://api.replicate.com/v1"
@@ -35,7 +35,7 @@ class ReplicateVideo:
 
     async def generate(self, req: VideoRequest) -> VideoResult:
         dur = 5.0 if req.duration <= 5.25 else 10.0
-        inp: dict = {"prompt": req.prompt, "duration": int(dur), "aspect_ratio": req.aspect.value}
+        inp: dict = {"prompt": styled_prompt(req), "duration": int(dur), "aspect_ratio": req.aspect.value}
         if req.negative_prompt:
             inp["negative_prompt"] = req.negative_prompt
         if req.image_url:
