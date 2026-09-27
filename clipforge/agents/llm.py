@@ -1,0 +1,288 @@
+"""LLM work via Pydantic AI agents (Claude primary, OpenAI fallback) with structured outputs.
+
+`LLM` is the facade used by graph nodes. Every method returns `(output, tokens)`
+so the node can charge the cost ledger. `FakeLLM` is deterministic and offline.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import math
+import re
+from pathlib import Path
+from typing import Protocol
+
+import httpx
+from pydantic import BaseModel, Field
+from pydantic_ai import Agent, BinaryContent, ModelRetry, RunContext
+
+from ..config import Settings
+from ..models import Beat, BrandKit, Hook, Ideas, Platform, Script, ScriptPackage, Shot, ShotList, Tier
+from ..platforms import PLATFORM_LIMITS
+from ..ratelimit import bucket
+
+WORDS_PER_SECOND = 2.6
+
+
+# --------------------------------------------------------------------------- outputs
+
+
+class PlatformCopy(BaseModel):
+    platform: Platform
+    title: str
+    description: str
+    hashtags: list[str] = Field(default_factory=list)
+
+
+class MetadataBundle(BaseModel):
+    items: list[PlatformCopy]
+
+
+class ModerationResult(BaseModel):
+    safe: bool
+    categories: list[str] = Field(default_factory=list)
+    reason: str = ""
+
+
+class ScriptDeps(BaseModel):
+    min_s: int = 30
+    max_s: int = 60
+    max_clip_seconds: float = 10
+
+
+class LLMBackend(Protocol):
+    async def ideate(self, kit: BrandKit, brief: str | None, avoid: list[str], n: int = 5) -> tuple[Ideas, int]: ...
+    async def script(self, kit: BrandKit, hook: Hook, brief: str | None, tier: Tier,
+                     max_clip_seconds: float) -> tuple[ScriptPackage, int]: ...
+    async def metadata(self, kit: BrandKit, script: Script,
+                       platforms: list[Platform]) -> tuple[MetadataBundle, int]: ...
+    async def moderate_text(self, text: str, banned: list[str]) -> tuple[ModerationResult, int]: ...
+    async def moderate_frames(self, frames: list[Path], banned: list[str]) -> tuple[ModerationResult, int]: ...
+    async def embed(self, texts: list[str]) -> list[list[float]]: ...
+
+
+# --------------------------------------------------------------------------- prompts
+
+
+def _kit_brief(kit: BrandKit) -> str:
+    return (
+        f"Niche: {kit.niche}\nAudience: {kit.audience}\nTone: {kit.tone}\n"
+        f"Banned topics (never touch): {', '.join(kit.banned_topics) or 'none'}\n"
+    )
+
+
+IDEATE_SYS = """You are a short-form video strategist for faceless social content (YouTube Shorts, Reels, TikTok).
+Produce scroll-stopping hooks: specific, curiosity-driven, deliverable in 30-60 seconds of narration with
+stock-style/generative b-roll (no on-camera presenter, no real people's likeness, no trademarks).
+Rank by expected retention; score in [0,1]. Never propose anything on the banned topic list or
+anything close to the recent hooks you are given."""
+
+SCRIPT_SYS = """You write narration scripts and shot lists for 9:16 faceless short videos.
+Rules:
+- Total length {min_s}-{max_s} s. Narration pace ~2.6 words/second, so vo_text has
+  {min_w}-{max_w} words and the shot durations sum to (vo words / 2.6) +/- 10%.
+- Beats: hook (first 2 s must grab), setup, value..., payoff, cta. vo_text is the beats joined.
+- caption_text: the on-screen caption version of vo_text (same words, no stage directions).
+- 3-6 shots. Each shot duration <= {max_clip}s unless unavoidable; prefer fewer, longer shots for consistency.
+- Shot prompts are for a text/image-to-video model: describe subject, action, camera move, lighting,
+  lens, style; vertical 9:16 framing; keep a consistent visual style and subject across shots.
+- No on-screen text, logos, watermarks, real people, celebrities or brands in shot prompts.
+- mood: one or two words for music selection (e.g. "upbeat", "cinematic tension", "lofi calm")."""
+
+METADATA_SYS = """You write platform-native post copy for short-form videos. Respect each platform's limits
+exactly, lead with the hook, and include relevant hashtags (no '#' in the list items). Never make claims the
+script does not make. Title is used for YouTube; for other platforms it is a short internal label."""
+
+MODERATION_SYS = """You are a content safety reviewer for brand-safe social video. Flag: sexual content, violence/
+gore, hate/harassment, self-harm, dangerous/illegal activity, medical/financial misinformation, real-person
+likeness or deepfake risk, trademark/logo misuse, and anything matching the brand's banned topics.
+Return safe=false with categories and a short reason if any apply."""
+
+
+class LLM:
+    def __init__(self, settings: Settings):
+        self.settings = settings
+        self.model = self._model(settings.llm_model, settings.llm_fallback_model)
+        self.vision_model = self._model(settings.vision_model, settings.llm_fallback_model)
+
+    def _model(self, primary: str, fallback: str):
+        from pydantic_ai.models.fallback import FallbackModel
+
+        avail = []
+        for m in (primary, fallback):
+            prov = m.split(":")[0]
+            if (prov == "anthropic" and self.settings.anthropic_api_key) or (
+                prov == "openai" and self.settings.openai_api_key
+            ):
+                avail.append(m)
+        if not avail:
+            raise RuntimeError("no LLM configured (ANTHROPIC_API_KEY / OPENAI_API_KEY)")
+        return avail[0] if len(avail) == 1 else FallbackModel(*avail)
+
+    @staticmethod
+    def _tokens(result) -> int:
+        u = result.usage()
+        return int((u.input_tokens or 0) + (u.output_tokens or 0))
+
+    async def ideate(self, kit, brief, avoid, n=5):
+        agent = Agent(self.model, output_type=Ideas, system_prompt=IDEATE_SYS, retries=2)
+        await bucket("anthropic").acquire()
+        prompt = (f"{_kit_brief(kit)}\nBrief: {brief or 'pick the best topic for this niche today'}\n"
+                  f"Recent hooks to avoid (last 90 days):\n- " + "\n- ".join(avoid[-60:] or ["(none)"])
+                  + f"\n\nReturn exactly {n} ranked hooks.")
+        r = await agent.run(prompt)
+        return r.output, self._tokens(r)
+
+    async def script(self, kit, hook, brief, tier, max_clip_seconds):
+        deps = ScriptDeps(max_clip_seconds=max_clip_seconds)
+        sys = SCRIPT_SYS.format(min_s=deps.min_s, max_s=deps.max_s, min_w=int(deps.min_s * WORDS_PER_SECOND),
+                                max_w=int(deps.max_s * WORDS_PER_SECOND), max_clip=max_clip_seconds)
+        agent = Agent(self.model, output_type=ScriptPackage, system_prompt=sys, deps_type=ScriptDeps, retries=3)
+
+        @agent.output_validator
+        def _check(ctx: RunContext[ScriptDeps], out: ScriptPackage) -> ScriptPackage:
+            problems = validate_script(out, ctx.deps)
+            if problems:
+                raise ModelRetry("; ".join(problems))
+            return out
+
+        await bucket("anthropic").acquire()
+        prompt = (f"{_kit_brief(kit)}\nVisual style guidance: avoid {', '.join(kit.negative_prompts)}.\n"
+                  f"Brief: {brief or '-'}\nHook: {hook.text}\nAngle: {hook.angle}\n"
+                  f"Tier: {tier.value} ({'longer single shots allowed' if tier == Tier.premium else 'max 10 s shots'})")
+        r = await agent.run(prompt, deps=deps)
+        return r.output, self._tokens(r)
+
+    async def metadata(self, kit, script, platforms):
+        agent = Agent(self.model, output_type=MetadataBundle, system_prompt=METADATA_SYS, retries=2)
+        limits = "\n".join(
+            f"- {p.value}: title <= {PLATFORM_LIMITS[p].title} chars, description <= "
+            f"{PLATFORM_LIMITS[p].description} chars, <= {PLATFORM_LIMITS[p].hashtags} hashtags" for p in platforms)
+        await bucket("anthropic").acquire()
+        r = await agent.run(
+            f"{_kit_brief(kit)}\nBrand hashtags: {', '.join(kit.hashtags) or '-'}\nTitle: {script.title}\n"
+            f"Hook: {script.hook}\nNarration: {script.vo_text}\nCTA: {script.cta}\n\nPlatforms:\n{limits}")
+        return r.output, self._tokens(r)
+
+    async def moderate_text(self, text, banned):
+        agent = Agent(self.model, output_type=ModerationResult, system_prompt=MODERATION_SYS, retries=2)
+        await bucket("anthropic").acquire()
+        r = await agent.run(f"Banned topics: {', '.join(banned) or 'none'}\n\nContent:\n{text}")
+        return r.output, self._tokens(r)
+
+    async def moderate_frames(self, frames, banned):
+        agent = Agent(self.vision_model, output_type=ModerationResult, system_prompt=MODERATION_SYS, retries=2)
+        parts: list = [f"Banned topics: {', '.join(banned) or 'none'}. Review these sampled video frames."]
+        parts += [BinaryContent(data=f.read_bytes(), media_type="image/jpeg") for f in frames]
+        await bucket("anthropic").acquire()
+        r = await agent.run(parts)
+        return r.output, self._tokens(r)
+
+    async def embed(self, texts):
+        if not self.settings.openai_api_key:
+            return [hash_embed(t) for t in texts]
+        await bucket("openai").acquire()
+        async with httpx.AsyncClient(timeout=60) as c:
+            r = await c.post("https://api.openai.com/v1/embeddings",
+                             headers={"Authorization": f"Bearer {self.settings.openai_api_key}"},
+                             json={"model": self.settings.embedding_model, "input": texts})
+            r.raise_for_status()
+            return [d["embedding"] for d in r.json()["data"]]
+
+
+def validate_script(out: ScriptPackage, deps: ScriptDeps) -> list[str]:
+    problems = []
+    words = len(out.script.vo_text.split())
+    spoken = words / WORDS_PER_SECOND
+    total = out.shot_list.total_duration
+    if not deps.min_s <= spoken <= deps.max_s + 2:
+        problems.append(f"vo_text has {words} words (~{spoken:.0f}s); need {deps.min_s}-{deps.max_s}s")
+    if abs(total - spoken) > max(4.0, 0.15 * spoken):
+        problems.append(f"shot durations sum to {total:.1f}s but narration is ~{spoken:.1f}s")
+    if not 3 <= len(out.shot_list.shots) <= 6:
+        problems.append("need 3-6 shots")
+    return problems
+
+
+def hash_embed(text: str, dims: int = 256) -> list[float]:
+    """Offline embedding: hashed word uni+bigrams, L2-normalised (good enough for near-duplicate hooks)."""
+    toks = re.findall(r"[a-z0-9']+", text.lower())
+    feats = toks + [f"{a}_{b}" for a, b in zip(toks, toks[1:], strict=False)]
+    v = [0.0] * dims
+    for f in feats:
+        h = int(hashlib.md5(f.encode()).hexdigest(), 16)
+        v[h % dims] += 1.0 if (h >> 8) & 1 else -1.0
+    n = math.sqrt(sum(x * x for x in v)) or 1.0
+    return [x / n for x in v]
+
+
+# --------------------------------------------------------------------------- fake
+
+
+class FakeLLM:
+    """Deterministic, schema-valid outputs without network (tests / demos)."""
+
+    def __init__(self, unsafe_words: tuple[str, ...] = ("gore", "nsfw")):
+        self.unsafe_words = unsafe_words
+
+    async def ideate(self, kit, brief, avoid, n=5):
+        topic = brief or kit.niche
+        base = [
+            f"3 {topic} mistakes everyone makes",
+            f"The {topic} trick nobody talks about",
+            f"Why your {topic} plan fails in week two",
+            f"{topic.capitalize()} in 40 seconds: the only rule you need",
+            f"I tried the viral {topic} hack so you don't have to",
+            f"The science behind {topic}, explained simply",
+        ]
+        hooks = [Hook(text=t, angle="listicle", score=round(0.9 - i * 0.07, 2), rationale="fake")
+                 for i, t in enumerate(base[: max(n, 1) + 1])]
+        return Ideas(hooks=hooks), 0
+
+    async def script(self, kit, hook, brief, tier, max_clip_seconds):
+        sentences = [
+            hook.text + "!",
+            "Most people jump in without a plan and burn out fast.",
+            "Here is the first fix: start smaller than you think, and make it daily.",
+            "Second: track one number, not ten, so progress is obvious.",
+            "Third: pair the new habit with something you already do every morning.",
+            "Do this for two weeks and it stops feeling like effort.",
+            "It becomes who you are, not something you force yourself to do.",
+            "Follow for more short, practical tips like this one.",
+        ]
+        vo = " ".join(sentences)
+        spoken = len(vo.split()) / WORDS_PER_SECOND
+        n = 4
+        per = round(spoken / n, 2)
+        shots = [Shot(index=i, prompt=f"Cinematic vertical b-roll {i + 1} about {hook.text}", duration=per)
+                 for i in range(n)]
+        script = Script(
+            title=hook.text[:90], hook=hook.text,
+            beats=[Beat(text=sentences[0], purpose="hook"), Beat(text=sentences[1], purpose="setup"),
+                   *[Beat(text=s, purpose="value") for s in sentences[2:5]],
+                   Beat(text=" ".join(sentences[5:7]), purpose="payoff"), Beat(text=sentences[7], purpose="cta")],
+            vo_text=vo, caption_text=vo, cta=sentences[-1], mood=(kit.music_moods or ["upbeat"])[0],
+            target_seconds=max(30, min(60, round(spoken))),
+        )
+        return ScriptPackage(script=script, shot_list=ShotList(shots=shots)), 0
+
+    async def metadata(self, kit, script, platforms):
+        items = [PlatformCopy(platform=p, title=script.title,
+                              description=f"{script.hook} {script.cta}",
+                              hashtags=(kit.hashtags or []) + ["shorts", kit.niche.replace(" ", "")])
+                 for p in platforms]
+        return MetadataBundle(items=items), 0
+
+    async def moderate_text(self, text, banned):
+        hits = [w for w in (*self.unsafe_words, *banned) if w and w.lower() in text.lower()]
+        return ModerationResult(safe=not hits, categories=hits, reason=", ".join(hits)), 0
+
+    async def moderate_frames(self, frames, banned):
+        return ModerationResult(safe=True), 0
+
+    async def embed(self, texts):
+        return [hash_embed(t) for t in texts]
+
+
+def build_llm(settings: Settings) -> LLMBackend:
+    return FakeLLM() if settings.provider_mode == "fake" else LLM(settings)

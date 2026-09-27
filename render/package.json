@@ -1,0 +1,35 @@
+{
+  "name": "clipforge-render",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ClipForge render worker: Remotion templates + Postgres job queue",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "remotion bundle src/index.ts --out-dir build/bundle",
+    "worker": "tsx src/worker.ts",
+    "render:local": "tsx src/cli.ts",
+    "studio": "remotion studio src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.529",
+    "@remotion/cli": "4.0.529",
+    "@remotion/renderer": "4.0.529",
+    "pg": "^8.13.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "remotion": "4.0.529",
+    "tsx": "^4.19.0",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.7.0"
+  }
+}

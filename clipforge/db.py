@@ -74,7 +74,9 @@ class Repo(Protocol):
     async def count_render_queue(self) -> int: ...
     # hooks (dedupe)
     async def add_hook(self, brand_id: str, run_id: str, text: str, embedding: list[float] | None) -> None: ...
-    async def recent_hooks(self, brand_id: str, since: datetime) -> list[tuple[str, list[float] | None]]: ...
+    async def recent_hooks(
+        self, brand_id: str, since: datetime, exclude_run_id: str | None = None
+    ) -> list[tuple[str, list[float] | None]]: ...
     # ops
     async def add_dead_letter(self, run_id: str, stage: str | None, error: str, payload: dict) -> None: ...
     async def mark_webhook(self, event_id: str, source: str) -> bool:
@@ -86,6 +88,9 @@ class Repo(Protocol):
     ) -> None: ...
     async def expiring_credentials(self, before: datetime) -> list[tuple[str, str]]: ...
     async def stale_runs(self, older_than: datetime) -> list[Run]: ...
+    async def claim_runs(self, worker: str, limit: int = 1) -> list[Run]:
+        """Atomically move queued / resume_requested runs to running for this worker."""
+        ...
 
 
 # ============================================================================ memory
@@ -242,8 +247,9 @@ class MemoryRepo:
     async def add_hook(self, brand_id, run_id, text, embedding) -> None:
         self.hooks.append((brand_id, run_id, text, embedding, utcnow()))
 
-    async def recent_hooks(self, brand_id: str, since: datetime):
-        return [(t, e) for b, _, t, e, at in self.hooks if b == brand_id and at >= since]
+    async def recent_hooks(self, brand_id: str, since: datetime, exclude_run_id: str | None = None):
+        return [(t, e) for b, rid, t, e, at in self.hooks
+                if b == brand_id and at >= since and (exclude_run_id is None or rid != exclude_run_id)]
 
     async def add_dead_letter(self, run_id, stage, error, payload) -> None:
         self.dead_letters.append({"run_id": run_id, "stage": stage, "error": error, "payload": payload})
@@ -264,6 +270,17 @@ class MemoryRepo:
 
     async def expiring_credentials(self, before: datetime) -> list[tuple[str, str]]:
         return [k for k, (_, exp) in self.credentials.items() if exp and exp < before]
+
+    async def claim_runs(self, worker: str, limit: int = 1) -> list[Run]:
+        out = []
+        for r in sorted(self.runs.values(), key=lambda r: r.created_at):
+            if len(out) >= limit:
+                break
+            if r.status in (RunStatus.queued, RunStatus.resume_requested):
+                r.status = RunStatus.running
+                r.updated_at = utcnow()
+                out.append(r.model_copy(deep=True))
+        return out
 
     async def stale_runs(self, older_than: datetime) -> list[Run]:
         return [
@@ -378,7 +395,7 @@ class PostgresRepo:
             id=str(r["id"]), brand_id=str(r["brand_id"]), brief=r["brief"], status=r["status"], tier=r["tier"],
             budget=float(r["budget"]), cost_total=float(r["cost_total"]), checkpoint_id=r["checkpoint_id"],
             schedule=r["schedule"], platforms=r["platforms"], error=r["error"], attempts=r["attempts"],
-            created_at=r["created_at"], updated_at=r["updated_at"],
+            pending_decision=r.get("pending_decision"), created_at=r["created_at"], updated_at=r["updated_at"],
         )
 
     async def create_run(self, run: Run) -> Run:
@@ -397,7 +414,7 @@ class PostgresRepo:
         return self._run(r)
 
     _RUN_COLS = {"status", "tier", "budget", "cost_total", "checkpoint_id", "schedule", "error", "attempts",
-                 "brief", "platforms"}
+                 "brief", "platforms", "pending_decision"}
 
     async def update_run(self, run_id: str, **fields: Any) -> Run:
         bad = set(fields) - self._RUN_COLS
@@ -405,6 +422,8 @@ class PostgresRepo:
             raise ValueError(f"unknown run fields {bad}")
         if "platforms" in fields:
             fields["platforms"] = [getattr(p, "value", p) for p in fields["platforms"]]
+        if "pending_decision" in fields and fields["pending_decision"] is not None:
+            fields["pending_decision"] = _j(fields["pending_decision"])
         sets = ", ".join(f"{k} = %s" for k in fields)
         r = await self._one(f"update runs set {sets} where id = %s returning *", *fields.values(), run_id)
         if not r:
@@ -591,10 +610,11 @@ class PostgresRepo:
             "insert into hook_history (brand_id, run_id, text, embedding) values (%s,%s,%s,%s::vector)",
             brand_id, run_id, text, str(embedding) if embedding else None)
 
-    async def recent_hooks(self, brand_id: str, since: datetime):
+    async def recent_hooks(self, brand_id: str, since: datetime, exclude_run_id: str | None = None):
         rows = await self._all(
-            "select text, embedding::text emb from hook_history where brand_id = %s and created_at >= %s",
-            brand_id, since)
+            """select text, embedding::text emb from hook_history
+               where brand_id = %s and created_at >= %s and run_id is distinct from %s::uuid""",
+            brand_id, since, exclude_run_id)
         return [(r["text"], json.loads(r["emb"]) if r["emb"] else None) for r in rows]
 
     # ---- ops
@@ -619,6 +639,15 @@ class PostgresRepo:
         rows = await self._all(
             "select brand_id, provider from provider_credentials where expires_at < %s", before)
         return [(str(r["brand_id"]), r["provider"]) for r in rows]
+
+    async def claim_runs(self, worker: str, limit: int = 1) -> list[Run]:
+        rows = await self._all(
+            """update runs set status = 'running', locked_by = %s, locked_at = now()
+               where id in (select id from runs where status in ('queued', 'resume_requested')
+                            order by created_at for update skip locked limit %s)
+               returning *""", worker, limit)
+        # the pre-update status is needed to know whether to start or resume; pending_decision tells us
+        return [self._run(r) for r in rows]
 
     async def stale_runs(self, older_than: datetime) -> list[Run]:
         rows = await self._all(

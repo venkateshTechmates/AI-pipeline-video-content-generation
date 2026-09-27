@@ -52,6 +52,9 @@ create table if not exists runs (
   platforms text[] not null default array['youtube', 'instagram', 'tiktok', 'linkedin', 'x'],
   error text,
   attempts int not null default 0,
+  pending_decision jsonb,
+  locked_by text,
+  locked_at timestamptz,
   state_json jsonb not null default '{}'::jsonb,  -- denormalised snapshot for UI
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -159,7 +162,7 @@ create table if not exists hook_history (
   brand_id uuid not null references brands(id) on delete cascade,
   run_id uuid references runs(id) on delete set null,
   text text not null,
-  embedding vector(1536),
+  embedding vector,  -- dimension depends on the embedding model
   created_at timestamptz not null default now()
 );
 create index if not exists hook_history_brand on hook_history (brand_id, created_at desc);

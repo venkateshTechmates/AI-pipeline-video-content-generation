@@ -57,6 +57,7 @@ ASPECT_SIZE: dict[Aspect, tuple[int, int]] = {
 class RunStatus(StrEnum):
     queued = "queued"
     running = "running"
+    resume_requested = "resume_requested"
     awaiting_approval = "awaiting_approval"
     awaiting_provider = "awaiting_provider"
     scheduled = "scheduled"
@@ -148,6 +149,9 @@ class BrandKit(BaseModel):
     disclosure: DisclosurePolicy = Field(default_factory=DisclosurePolicy)
     platforms: list[Platform] = Field(default_factory=lambda: list(ALL_PLATFORMS))
     hashtags: list[str] = Field(default_factory=list)
+    # Cross-shot consistency: "reference" = image-to-video from reference_images[0];
+    # "first_shot" = generate shot 0, then use its frame as the reference for the rest; "none" = text-to-video.
+    consistency: Literal["reference", "first_shot", "none"] = "first_shot"
 
 
 class Brand(BaseModel):
@@ -384,6 +388,7 @@ class Run(BaseModel):
     platforms: list[Platform] = Field(default_factory=lambda: list(ALL_PLATFORMS))
     error: str | None = None
     attempts: int = 0
+    pending_decision: dict[str, Any] | None = None  # approval decision waiting for the worker to resume
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 
