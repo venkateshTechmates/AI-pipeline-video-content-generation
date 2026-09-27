@@ -314,9 +314,12 @@ function ProviderTable({ providers }: { providers: ProviderStat[] }) {
 // ------------------------------------------------------------------ stages
 
 function StageLatency({ stages }: { stages: StageStat[] }) {
+  // Human-gate stages can last hours; keep them off the shared scale only when they would dwarf it.
   const isWait = (s: StageStat) => isWaitSpan({ name: s.name, attributes: {}, events: [], kind: "stage" });
-  const work = [...stages].filter((s) => !isWait(s)).sort((a, b) => stageRank(a.name) - stageRank(b.name) || a.name.localeCompare(b.name));
-  const waits = stages.filter(isWait);
+  const workMax = Math.max(1, ...stages.filter((s) => !isWait(s)).map((s) => s.p95_ms));
+  const offScale = (s: StageStat) => isWait(s) && s.p95_ms > workMax * 1.5;
+  const work = stages.filter((s) => !offScale(s)).sort((a, b) => stageRank(a.name) - stageRank(b.name) || a.name.localeCompare(b.name));
+  const waits = stages.filter(offScale);
   const max = Math.max(1, ...work.map((s) => s.p95_ms));
   return (
     <section className="card" aria-labelledby="stage-lat-title">
@@ -359,7 +362,7 @@ function StageLatency({ stages }: { stages: StageStat[] }) {
         {waits.length > 0 && (
           <p className="waiting-note" style={{ marginTop: 16 }}>
             <span className="hatch-swatch" aria-hidden />
-            {waits.map((w) => `${w.name} (human gate) p50 ${dur(w.p50_ms)} · p95 ${dur(w.p95_ms)}`).join(" · ")} — not to scale
+            {waits.map((w) => `${w.name} (human gate) p50 ${dur(w.p50_ms)} · p95 ${dur(w.p95_ms)}`).join(" · ")} — off scale
           </p>
         )}
       </div>

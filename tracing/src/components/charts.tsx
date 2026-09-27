@@ -1,11 +1,14 @@
 import { useMemo, useState } from "react";
 import { useWidth } from "../hooks";
 
-function niceMax(v: number): number {
-  if (v <= 0) return 1;
-  const p = Math.pow(10, Math.floor(Math.log10(v)));
-  for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p;
-  return 10 * p;
+/** Integer-friendly axis: a nice step (1, 2, 5 × 10ⁿ) giving at most 5 intervals. */
+function niceAxis(v: number, integer: boolean): { max: number; step: number } {
+  const target = Math.max(v, integer ? 1 : 0.0001);
+  const raw = target / 4;
+  const p = Math.pow(10, Math.floor(Math.log10(raw)));
+  let step = [1, 2, 2.5, 5, 10].map((m) => m * p).find((s) => s >= raw) ?? 10 * p;
+  if (integer) step = Math.max(1, Math.ceil(step));
+  return { max: Math.ceil(target / step) * step, step };
 }
 
 export interface ColumnSeries {
@@ -45,11 +48,11 @@ export function ColumnChart<T extends Record<string, unknown>>({
   const H = height;
   const innerW = W - padL - padR;
   const innerH = H - padT - padB;
-  const max = useMemo(() => niceMax(Math.max(1, ...data.flatMap((d) => series.map((s) => Number(d[s.key]) || 0)))), [data, series]);
-  const ticks = useMemo(() => {
-    const n = max <= 4 ? max : 4;
-    return Array.from({ length: n + 1 }, (_, i) => (max / n) * i);
-  }, [max]);
+  const { max, step } = useMemo(
+    () => niceAxis(Math.max(...data.flatMap((d) => series.map((s) => Number(d[s.key]) || 0)), 0), true),
+    [data, series],
+  );
+  const ticks = useMemo(() => Array.from({ length: Math.round(max / step) + 1 }, (_, i) => i * step), [max, step]);
   const band = data.length ? innerW / data.length : innerW;
   const groupW = Math.min(band * 0.72, 30 * series.length);
   const barW = Math.max(2, Math.min(24, (groupW - 2 * (series.length - 1)) / series.length));

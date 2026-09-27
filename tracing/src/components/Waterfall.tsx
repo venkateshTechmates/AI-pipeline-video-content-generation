@@ -161,7 +161,8 @@ export function Waterfall({ tree, scale, rows, collapsed, onToggle, selectedId, 
           <div className="wf-axis" ref={axisRef} aria-hidden>
             {width > 0 &&
               tks.map((t, i) => (
-                <span key={`${t.offset}`} className={`wf-tick ${i === 0 ? "first" : ""}`} style={{ left: t.x }}>
+                <span key={`${t.x}`} className={`wf-tick ${i === 0 ? "first" : ""}`} style={{ left: t.x }}>
+                  {t.after ? "+" : ""}
                   {tickLabel(t.offset, t.step)}
                 </span>
               ))}
@@ -185,7 +186,7 @@ export function Waterfall({ tree, scale, rows, collapsed, onToggle, selectedId, 
           {width > 0 && (
             <div className="wf-grid" aria-hidden>
               {tks.map((t) => (
-                <span key={t.offset} className="wf-gridline" style={{ left: t.x }} />
+                <span key={t.x} className="wf-gridline" style={{ left: t.x }} />
               ))}
               {gapSegs.map((g) => (
                 <span key={g.t0} className="wf-gap-band" style={{ left: g.x0, width: Math.max(2, g.x1 - g.x0) }} />
@@ -245,7 +246,10 @@ const WfRow = memo(function WfRow({ row, p, width, collapsed, selected, tabbable
   const labelLeft = !labelRight && x0 - 6 - labelW >= 0;
 
   const retries = s.events.filter((e) => e.name === "retry").length;
-  const attempt = typeof s.attributes.attempt === "number" ? s.attributes.attempt : 1;
+  // run.execute's attempt counts worker executions (resume), not provider retries
+  // (and the approve gate's second attempt is just the post-decision half)
+  const attempt = s.kind !== "run" && !wait && typeof s.attributes.attempt === "number" ? s.attributes.attempt : 1;
+  const resumed = s.kind === "run" && s.attributes.resume === true;
   const fallback = s.events.some((e) => e.name === "fallback") || !!s.attributes.fallback_from;
   const cache = s.events.some((e) => e.name === "cache_hit");
   const shot = s.attributes.shot_index;
@@ -302,6 +306,11 @@ const WfRow = memo(function WfRow({ row, p, width, collapsed, selected, tabbable
           {fallback && (
             <span className="wf-flag tone-warn" title="Provider fallback">
               <CornerDownRight size={9} aria-hidden />
+            </span>
+          )}
+          {resumed && (
+            <span className="wf-flag tone-accent" title="Resumed execution (after approval / retry)">
+              resume
             </span>
           )}
           {cache && (

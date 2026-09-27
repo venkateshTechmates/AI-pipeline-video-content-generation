@@ -152,40 +152,79 @@ export function buildScale(tree: SpanTree, threshold = 60_000): TimeScale {
   return { t0, t1, segments, gaps, activeMs };
 }
 
+export interface ProjSegment extends Segment {
+  x0: number;
+  x1: number;
+  pxPerMs: number;
+  index: number; // index among active segments
+}
+
 export interface Projection {
   x: (t: number) => number;
   width: number;
   gapPx: number;
-  pxPerMs: number;
-  segments: (Segment & { x0: number; x1: number })[];
+  segments: ProjSegment[];
 }
 
-/** Piecewise-linear projection: active time is proportional, gaps are fixed-width breaks. */
+/**
+ * Piecewise-linear projection: gaps are fixed-width breaks; active segments
+ * share the rest in proportion to their duration, but each gets at least a
+ * minimum share so a short burst after a long approval wait stays legible
+ * (the break marker already signals the change of scale).
+ */
 export function project(scale: TimeScale, width: number, gapPx = 44): Projection {
   const nGaps = scale.gaps.length;
-  const g = nGaps ? Math.min(gapPx, width * 0.18 / nGaps) : 0;
+  const g = nGaps ? Math.min(gapPx, (width * 0.18) / nGaps) : 0;
   const usable = Math.max(1, width - g * nGaps);
-  const pxPerMs = scale.activeMs > 0 ? usable / scale.activeMs : 0;
+  const active = scale.segments.filter((s) => s.kind === "active");
+  const durs = active.map((s) => Math.max(0, s.t1 - s.t0));
+  const total = durs.reduce((a, b) => a + b, 0);
+  let shares = durs.map((d) => (total > 0 ? d / total : 1 / Math.max(1, active.length)));
+  if (active.length > 1 && total > 0) {
+    const m = Math.min(0.2, 0.5 / active.length);
+    const fixed = new Set<number>();
+    for (let iter = 0; iter < active.length; iter++) {
+      const freeTotal = durs.reduce((a, d, i) => (fixed.has(i) ? a : a + d), 0);
+      const freeShare = 1 - fixed.size * m;
+      let changed = false;
+      durs.forEach((d, i) => {
+        if (!fixed.has(i) && (freeTotal <= 0 || (d / freeTotal) * freeShare < m)) {
+          fixed.add(i);
+          changed = true;
+        }
+      });
+      if (!changed) break;
+    }
+    const freeTotal = durs.reduce((a, d, i) => (fixed.has(i) ? a : a + d), 0);
+    const freeShare = 1 - fixed.size * m;
+    shares = durs.map((d, i) => (fixed.has(i) || freeTotal <= 0 ? m : (d / freeTotal) * freeShare));
+  }
   let x = 0;
-  const segments = scale.segments.map((s) => {
-    const w = s.kind === "gap" ? g : (s.t1 - s.t0) * pxPerMs;
-    const seg = { ...s, x0: x, x1: x + w };
+  let ai = 0;
+  const segments: ProjSegment[] = scale.segments.map((s) => {
+    if (s.kind === "gap") {
+      const seg = { ...s, x0: x, x1: x + g, pxPerMs: 0, index: -1 };
+      x += g;
+      return seg;
+    }
+    const w = shares[ai] * usable;
+    const d = Math.max(0, s.t1 - s.t0);
+    const seg = { ...s, x0: x, x1: x + w, pxPerMs: d > 0 ? w / d : 0, index: ai };
+    ai++;
     x += w;
     return seg;
   });
-  // Zero-length trace: spread evenly.
   const fx = (t: number): number => {
-    if (scale.activeMs <= 0) return t > scale.t0 ? width : 0;
     if (t <= scale.t0) return 0;
     for (const s of segments) {
       if (t <= s.t1) {
         const span = s.t1 - s.t0;
-        return span > 0 ? s.x0 + ((t - s.t0) / span) * (s.x1 - s.x0) : s.x0;
+        return span > 0 ? s.x0 + ((t - s.t0) / span) * (s.x1 - s.x0) : s.x1;
       }
     }
     return width;
   };
-  return { x: fx, width, gapPx: g, pxPerMs, segments };
+  return { x: fx, width, gapPx: g, segments };
 }
 
 const NICE = [1, 2, 5, 10, 20, 50, 100, 200, 250, 500, 1000, 2000, 5000, 10_000, 15_000, 30_000, 60_000, 120_000, 300_000, 600_000, 900_000, 1_800_000, 3_600_000, 7_200_000, 21_600_000, 43_200_000, 86_400_000];
@@ -198,24 +237,29 @@ export function niceStep(pxPerMs: number, minPx = 84): number {
 
 export interface Tick {
   x: number;
-  offset: number; // ms since trace start
+  offset: number; // ms since the segment's origin
   step: number;
+  after: boolean; // in a segment after a break (label as "+offset")
 }
 
-/** Axis ticks at nice multiples of trace-relative time inside each active segment. */
-export function ticks(p: Projection, t0: number, minPx = 84): Tick[] {
-  const step = niceStep(p.pxPerMs, minPx);
+/**
+ * Axis ticks per active segment, each on its own nice step. The first segment
+ * counts from trace start; segments after a break count from the break.
+ */
+export function ticks(p: Projection, t0: number, minPx = 84, gapClear = 72): Tick[] {
   const out: Tick[] = [];
+  const gaps = p.segments.filter((g) => g.kind === "gap");
   for (const s of p.segments) {
-    if (s.kind !== "active") continue;
-    const first = Math.ceil((s.t0 - t0) / step) * step;
-    for (let off = first; t0 + off <= s.t1 + 0.5; off += step) {
-      const x = p.x(t0 + off);
-      // keep clear of break markers
-      const nearGap = p.segments.some((g) => g.kind === "gap" && (Math.abs(x - g.x0) < 26 || Math.abs(x - g.x1) < 26));
-      if (nearGap && off !== 0) continue;
+    if (s.kind !== "active" || s.pxPerMs <= 0) continue;
+    const origin = s.index === 0 ? t0 : s.t0;
+    const step = niceStep(s.pxPerMs, minPx);
+    const first = Math.ceil((s.t0 - origin) / step) * step;
+    for (let off = first; origin + off <= s.t1 + 0.5; off += step) {
+      const x = p.x(origin + off);
+      if (gaps.some((g) => Math.abs(x - (g.x0 + g.x1) / 2) < gapClear)) continue;
       if (out.length && x - out[out.length - 1].x < minPx * 0.6) continue;
-      out.push({ x, offset: off, step });
+      if (x > p.width - 14) continue;
+      out.push({ x, offset: off, step, after: s.index > 0 });
     }
   }
   return out;
@@ -331,9 +375,10 @@ function costEvents(s: Span): { provider: string | null; usd: number }[] {
     }));
 }
 
-/** The provider a leaf span called (provider attr, else renderer). */
+/** The provider a leaf span called: provider attr, else renderer, else (LLM) model. */
 export function spanProvider(s: Span): string | null {
-  const p = s.attributes?.provider ?? s.attributes?.renderer;
+  const a = s.attributes ?? {};
+  const p = a.provider ?? a.renderer ?? (s.kind === "llm" ? a.model : undefined);
   return typeof p === "string" && p ? p : null;
 }
 

@@ -150,7 +150,9 @@ function ApiIndicator() {
         <span>API · {MOCK ? "Fixtures" : state}</span>
         {MOCK && <span className="mock-badge">MOCK</span>}
       </div>
-      <div className="api-url">{MOCK ? "src/mock.ts" : API_URL.startsWith("/") ? `${location.origin}${API_URL}` : API_URL}</div>
+      <div className="api-url" title={API_URL}>
+        {MOCK ? "src/mock.ts" : (API_URL.startsWith("/") ? `${location.host}${API_URL}` : API_URL.replace(/^https?:\/\//, ""))}
+      </div>
     </div>
   );
 }

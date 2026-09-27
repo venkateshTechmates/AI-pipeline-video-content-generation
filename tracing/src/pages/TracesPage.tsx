@@ -204,9 +204,8 @@ export function TracesPage() {
                 <tr>
                   <th>Status</th>
                   <th>Trace</th>
-                  <th className="hide-md">Brand</th>
-                  <th>Lang</th>
-                  <th className="hide-md">Tier</th>
+                  {!brandId && <th className="hide-md">Brand</th>}
+                  <th>Lang · tier</th>
                   <th>Started</th>
                   <th className="num">Duration</th>
                   <th className="num">Spans</th>
@@ -216,7 +215,7 @@ export function TracesPage() {
               </thead>
               <tbody>
                 {items.map((t) => (
-                  <TraceRow key={t.trace_id} t={t} now={now} showStages={hasStages} onOpen={() => nav(`/traces/${t.trace_id}`)} />
+                  <TraceRow key={t.trace_id} t={t} now={now} showStages={hasStages} showBrand={!brandId} onOpen={() => nav(`/traces/${t.trace_id}`)} />
                 ))}
               </tbody>
             </table>
@@ -227,7 +226,19 @@ export function TracesPage() {
   );
 }
 
-function TraceRow({ t, now, showStages, onOpen }: { t: TraceSummary; now: number; showStages: boolean; onOpen: () => void }) {
+function TraceRow({
+  t,
+  now,
+  showStages,
+  showBrand,
+  onOpen,
+}: {
+  t: TraceSummary;
+  now: number;
+  showStages: boolean;
+  showBrand: boolean;
+  onOpen: () => void;
+}) {
   const live = LIVE_STATUSES.has(t.status);
   const d = t.duration_ms ?? (live ? now - new Date(t.started_at).getTime() : null);
   return (
@@ -251,21 +262,22 @@ function TraceRow({ t, now, showStages, onOpen }: { t: TraceSummary; now: number
       </td>
       <td className="c-meta">
         <StatusPill status={t.status} size="sm" />
-        <span className="faint small">{t.brand_name}</span>
-        <span className="faint small">· {relTime(t.started_at, now)}</span>
         {t.error_count > 0 && (
           <span className="err-badge" aria-label={`${t.error_count} errors`}>
             <AlertTriangle size={10} aria-hidden />
             {t.error_count}
           </span>
         )}
+        <span className="faint small ellipsis">
+          {t.brand_name} · {relTime(t.started_at, now)}
+        </span>
       </td>
-      <td className="cell-brand hide-md">{t.brand_name}</td>
+      {showBrand && <td className="cell-brand hide-md">{t.brand_name}</td>}
       <td>
-        <LangBadge code={t.language} />
-      </td>
-      <td className="hide-md">
-        <TierBadge tier={t.tier} />
+        <span className="row" style={{ gap: 5 }}>
+          <LangBadge code={t.language} />
+          <TierBadge tier={t.tier} />
+        </span>
       </td>
       <td className="small muted" title={fullDateTime(t.started_at)} style={{ whiteSpace: "nowrap" }}>
         {relTime(t.started_at, now)}

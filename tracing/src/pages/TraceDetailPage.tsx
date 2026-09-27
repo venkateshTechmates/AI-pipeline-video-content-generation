@@ -216,7 +216,15 @@ function TraceView({ data, live, error }: { data: TraceDetail; live: boolean; er
       <ErrorBox error={error} />
 
       <div className="tiles">
-        <Tile icon={<Clock size={14} aria-hidden />} label="Duration" value={durationMs === null ? "—" : dur(durationMs)} foot={trace.ended_at ? `ended ${relTime(trace.ended_at)}` : live ? "in progress" : "not finished"} />
+        <Tile icon={<Clock size={14} aria-hidden />} label="Duration" value={durationMs === null ? "—" : dur(durationMs)} foot={
+            trace.status === "awaiting_approval"
+              ? "paused · awaiting review"
+              : live
+                ? "in progress"
+                : trace.ended_at
+                  ? `ended ${relTime(trace.ended_at)}`
+                  : "not finished"
+          } />
         <Tile
           icon={<Hourglass size={14} aria-hidden />}
           label="Active time"
@@ -224,7 +232,7 @@ function TraceView({ data, live, error }: { data: TraceDetail; live: boolean; er
           foot={waitMs > 0 ? `excl. ${dur(waitMs)} waiting` : "no idle gaps"}
         />
         <Tile icon={<CircleDollarSign size={14} aria-hidden />} label="Cost" value={money(trace.cost_total)} foot={`${leafCalls} provider / LLM calls`} />
-        <Tile icon={<Layers size={14} aria-hidden />} label="Spans" value={trace.span_count || spans.length} foot={`${stageCount} stages · ${tree.roots.filter((r) => r.kind === "run").length || tree.roots.length} executions`} />
+        <Tile icon={<Layers size={14} aria-hidden />} label="Spans" value={trace.span_count || spans.length} foot={`${stageCount} stages · ${plural(tree.roots.filter((r) => r.kind === "run").length || tree.roots.length, "execution")}`} />
         <Tile
           icon={<AlertTriangle size={14} aria-hidden />}
           label="Errors"
@@ -247,7 +255,7 @@ function TraceView({ data, live, error }: { data: TraceDetail; live: boolean; er
       ) : (
         <>
           <div className="summary-grid">
-            <StageBreakdown stages={stages} onPick={(name) => {
+            <StageBreakdown stages={stages} idleMs={waitMs} onPick={(name) => {
               const s = tree.list.find((x) => x.kind === "stage" && x.name === name);
               if (s) selectAndReveal(s.id);
             }} />
@@ -376,9 +384,21 @@ function TraceView({ data, live, error }: { data: TraceDetail; live: boolean; er
   );
 }
 
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
 // ------------------------------------------------------------------ summary strip
 
-function StageBreakdown({ stages, onPick }: { stages: ReturnType<typeof stageTimes>; onPick: (name: string) => void }) {
+function StageBreakdown({
+  stages,
+  idleMs,
+  onPick,
+}: {
+  stages: ReturnType<typeof stageTimes>;
+  idleMs: number;
+  onPick: (name: string) => void;
+}) {
   const work = stages.filter((s) => !s.wait && s.ms > 0);
   const waits = stages.filter((s) => s.wait);
   const total = work.reduce((a, s) => a + s.ms, 0);
@@ -419,9 +439,12 @@ function StageBreakdown({ stages, onPick }: { stages: ReturnType<typeof stageTim
                 </li>
               ))}
             </ul>
-            {waitMs > 0 && (
+            {(idleMs > 0 || waitMs > 0) && (
               <p className="waiting-note" style={{ marginTop: 12 }}>
-                <span className="hatch-swatch" aria-hidden /> approve (human gate) spans {dur(waitMs)} — excluded above
+                <span className="hatch-swatch" aria-hidden />
+                {idleMs > 0
+                  ? `${dur(idleMs)} idle waiting for approval — not counted`
+                  : `approve (human gate) ${dur(waitMs)} — not counted`}
               </p>
             )}
           </>

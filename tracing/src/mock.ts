@@ -474,6 +474,7 @@ function buildTrace(sc: Scenario, index: number, now: number): { summary: TraceS
       t = ap1.t1 + 3;
     }
   }
+  t = Math.max(t, shotEnd, genShots.t1);
   run1.t1 = t + 2;
   if (failed) {
     run1.status = "error";
