@@ -1,7 +1,7 @@
 # Local / single-host deployment.
 #   docker compose up --build            -> fake providers, no keys needed
 #   cp .env.example .env && edit          -> real providers (set PROVIDER_MODE=live)
-# Services: postgres (plain Postgres; use Supabase in production), api, worker, render (Remotion), ui.
+# Services: postgres (plain Postgres; use Supabase in production), api, worker, render (Remotion), ui, tracing.
 
 x-app: &app
   build: .
@@ -77,6 +77,15 @@ services:
       API_UPSTREAM: http://api:8000
     ports:
       - "5173:80"
+    depends_on:
+      - api
+
+  tracing:
+    build: ./tracing
+    environment:
+      API_UPSTREAM: http://api:8000
+    ports:
+      - "5174:80"
     depends_on:
       - api
 

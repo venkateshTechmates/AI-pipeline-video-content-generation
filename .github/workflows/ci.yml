@@ -43,6 +43,22 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
 
+  tracing:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tracing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tracing/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run build
+
   ui:
     runs-on: ubuntu-latest
     defaults:

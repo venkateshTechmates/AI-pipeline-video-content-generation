@@ -24,6 +24,7 @@ media through ffmpeg. The full graph runs end to end: ideation, captions, QA, ap
 pip install -e ".[dev]"          # needs ffmpeg on PATH
 clipforge dev --runs 3           # API + embedded worker on :8000, demo brand + 3 runs
 cd ui && npm install && npm run dev   # review UI on :5173 (proxies /api -> :8000)
+cd tracing && npm install && npm run dev   # tracing console on :5174
 ```
 
 For a nicer offline demo, set `DEMO_VIDEO_STYLE=gradients` (or `cosmic`) for animated backgrounds.
@@ -215,8 +216,15 @@ claude mcp add clipforge -e CLIPFORGE_API_URL=https://api.example.com -e CLIPFOR
 
 ## Observability
 
-With `OTEL_EXPORTER_OTLP_ENDPOINT` and/or `LANGFUSE_*` set (and the `.[otel]` extra installed),
-you get:
+**Tracing app** (`tracing/`, port 5174 in compose): a separate console for every pipeline run. Each run
+is a trace of nested spans (`run.execute` → stage → provider/LLM call) stored in `trace_spans`, with
+timings, retries, provider fallbacks, cache hits, budget checks, cost and errors. The app shows a
+searchable traces table, a waterfall timeline (long approval waits are collapsed so short spans stay
+visible), a span detail panel, and provider/stage latency (p50/p95), error-rate and cost statistics
+(`GET /traces`, `/traces/{id}`, `/traces/stats`). See `tracing/README.md` for screenshots.
+
+With `OTEL_EXPORTER_OTLP_ENDPOINT` and/or `LANGFUSE_*` set (and the `.[otel]` extra installed), the
+same spans are also exported, and you get:
 - a span per run and per stage, tagged with run and brand IDs
 - Pydantic AI prompt, output and token traces in Langfuse
 - FastAPI request traces
@@ -227,8 +235,9 @@ Stage durations and costs are also in the `stages` and `cost_ledger` tables for 
 
 ```
 clipforge/        Python: models, graph (nodes/builder/state), providers, agents, API, orchestrator, ops, MCP, CLI
-render/           Remotion templates + render worker (Node 22)
+render/           Remotion templates + render worker (Node 22); scenes/ = local animation engine
 ui/               React review UI (Vite)
+tracing/          Tracing console (Vite): waterfalls, span details, provider stats
 supabase/         SQL migrations
 tests/            unit, API, end-to-end pipeline (fake providers), Postgres integration
 ```
