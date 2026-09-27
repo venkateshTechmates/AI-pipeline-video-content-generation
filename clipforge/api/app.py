@@ -125,16 +125,24 @@ def create_app(settings: Settings | None = None, app_state: App | None = None,
         by_provider: dict[str, float] = defaultdict(float)
         by_stage: dict[str, float] = defaultdict(float)
         by_day: dict[str, float] = defaultdict(float)
+        day_stage: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+        day_provider: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
         for e in entries:
+            day = e.at.date().isoformat()
             by_provider[e.provider] += e.total
             by_stage[e.stage] += e.total
-            by_day[e.at.date().isoformat()] += e.total
+            by_day[day] += e.total
+            day_stage[day][e.stage] += e.total
+            day_provider[day][e.provider] += e.total
         return {
             "brand_id": brand_id, "from": start_d.isoformat(), "to": end_d.isoformat(),
             "total": round(sum(e.total for e in entries), 4),
             "by_provider": {k: round(v, 4) for k, v in by_provider.items()},
             "by_stage": {k: round(v, 4) for k, v in by_stage.items()},
-            "by_day": [{"day": d, "total": round(v, 4)} for d, v in sorted(by_day.items())],
+            "by_day": [{"day": d, "total": round(v, 4),
+                        "by_stage": {k: round(x, 4) for k, x in day_stage[d].items()},
+                        "by_provider": {k: round(x, 4) for k, x in day_provider[d].items()}}
+                       for d, v in sorted(by_day.items())],
             "runs": len({e.run_id for e in entries}),
         }
 
@@ -171,6 +179,9 @@ def create_app(settings: Settings | None = None, app_state: App | None = None,
                                           "music", "decision", "auto_approved") if state.get(k) is not None}
         view["renders"] = [{**r, "url": with_url(request, r["path"])} for r in state.get("renders") or []]
         view["clips"] = [{**c, "url": with_url(request, c["path"])} for c in state.get("clips") or []]
+        if view.get("metadata"):
+            view["metadata"] = [{**m, "thumbnail_url": with_url(request, m.get("thumbnail_path"))}
+                                for m in view["metadata"]]
         return {
             "run": run.model_dump(mode="json"),
             "stages": [s.model_dump(mode="json") for s in await repo.list_stages(run_id)],
@@ -215,7 +226,7 @@ def create_app(settings: Settings | None = None, app_state: App | None = None,
             st = await repo.get_run_state(r.id)
             vertical = next((x for x in st.get("renders") or [] if x["aspect"] == "9:16"), None)
             items.append({"run": r.model_dump(mode="json"), "brand_name": names[r.brand_id],
-                          "qa": st.get("qa_report"), "script": st.get("script"),
+                          "qa": st.get("qa_report"), "script": st.get("script"), "vo": st.get("vo"),
                           "preview_url": with_url(request, vertical["path"]) if vertical else None,
                           "cost_total": r.cost_total, "budget": r.budget})
         return {"items": items}

@@ -93,9 +93,11 @@ class StageCtx:
             self.providers.append(provider)
 
     async def charge_llm(self, tokens: int) -> None:
+        prov = f"{self.deps.settings.llm_model.split(':')[0]}:llm"
         if tokens:
-            prov = self.deps.settings.llm_model.split(":")[0]
-            await self.charge(f"{prov}:llm", tokens / 1_000_000)
+            await self.charge(prov, tokens / 1_000_000)
+        elif prov not in self.providers:  # offline fakes: record who ran the stage even at $0
+            self.providers.append(prov)
 
     async def asset(self, type_: str, key: str, sha: str, **meta: Any) -> None:
         await self.deps.repo.add_asset(Asset(run_id=self.run_id, type=type_, storage_path=key, sha256=sha,
@@ -151,6 +153,8 @@ def tracked(deps: Deps, name: str):
                     out = await fn(state, ctx)
             except GraphBubbleUp:  # interrupt(): waiting for a human, not a failure
                 await _stage_end(deps, rec, StageStatus.pending, cost=ctx.cost)
+                rec.ended_at = None
+                await deps.repo.upsert_stage(rec)
                 raise
             except Exception as e:
                 await _stage_end(deps, rec, StageStatus.failed, error=f"{type(e).__name__}: {e}"[:2000],
