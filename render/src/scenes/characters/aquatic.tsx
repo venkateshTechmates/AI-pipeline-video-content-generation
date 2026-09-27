@@ -26,8 +26,12 @@ export const Whale: React.FC<CharProps> = (p) => {
   const top = L(orca ? "#16181f" : "#36557a"), belly = L(orca ? "#f4f6f8" : "#c9d8e4"), fin = L(orca ? "#16181f" : "#9fb4c8"), dark = darken(top, 0.3);
   const surface = ctx.spec.setting === "ocean";
   const f = 2.2;
-  const line = spine(820, 16, t, f, (u) => 6 + u * u * 46);
-  const w = (u: number) => (u < 0.14 ? 70 + Math.sqrt(u / 0.14) * 150 : u < 0.5 ? 220 - (u - 0.14) * 140 : Math.max(26, 170 - (u - 0.5) * 300));
+  // head drops slightly so the top line slopes down to a rounded snout
+  const line = spine(820, 16, t, f, (u) => 6 + u * u * 46).map(([x, y], i): Pt => {
+    const u = i / 16;
+    return [x, y + (u < 0.3 ? Math.pow(1 - u / 0.3, 2) * 46 : 0)];
+  });
+  const w = (u: number) => (u < 0.16 ? 60 + Math.sqrt(u / 0.16) * 160 : u < 0.5 ? 220 - (u - 0.16) * 140 : Math.max(26, 172 - (u - 0.5) * 300));
   const outline = ribbon(line, w);
   const tail = line[line.length - 1]!, pre = line[line.length - 2]!;
   const tailAng = Math.atan2(tail[1] - pre[1], tail[0] - pre[0]) * (180 / Math.PI) + 180;

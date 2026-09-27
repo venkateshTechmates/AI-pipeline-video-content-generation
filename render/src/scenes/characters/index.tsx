@@ -26,10 +26,12 @@ export type CharDef = {
 
 /** Standard ground placement: centred, extra copies further back, smaller and to the sides. */
 export const groundPlace = (s: number, spread = 0.3, xBias = 0.5) => (ctx: Ctx, idx: number, n: number): Placement => {
-  const k = Math.pow(0.74, idx);
+  // groups: everyone a bit smaller, copies further back; offsets limited so they stay in frame
+  const k = Math.pow(0.74, idx) * (n > 1 ? 0.84 : 1);
   const side = idx === 0 ? 0 : idx % 2 === 1 ? -1 : 1;
+  const off = Math.min(ctx.VW * spread, 330 * s);
   return {
-    x: ctx.VW * xBias + side * ctx.VW * spread + (idx === 0 && n > 1 ? ctx.VW * 0.06 : 0),
+    x: ctx.VW * xBias + side * off + (n > 1 ? Math.min(ctx.VW * 0.1, 120 * s) : 0),
     y: ctx.groundY - idx * 60,
     s: s * k,
     z: -idx,

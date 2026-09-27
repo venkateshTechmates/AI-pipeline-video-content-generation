@@ -3,7 +3,7 @@ import React from "react";
 import type { Ctx } from "../ctx";
 import { darken, lighten, mix } from "../lib/color";
 import { mod, rnd, rr, smoothPath, TAU, wobble, type Pt } from "../lib/math";
-import { Glow, Layer, tiles, useSid, visibleX } from "../lib/svg";
+import { Layer, tiles, useSid, visibleX } from "../lib/svg";
 import { Clouds, Ground, HorizonHaze, hillNoise, Orb, Pine, ridgeNoise, ridgePath, Sky, SkyFx, Stars } from "./common";
 
 const snowy = (ctx: Ctx) => ctx.spec.weather === "snow" || ctx.spec.setting === "ice";
@@ -390,7 +390,7 @@ export const IceFront: React.FC<{ ctx: Ctx }> = ({ ctx }) => (
 // ---------------------------------------------------------------------------
 
 export const SkyBack: React.FC<{ ctx: Ctx }> = ({ ctx }) => {
-  const { VH, pal } = ctx;
+  const { VH } = ctx;
   return (
     <>
       <Sky ctx={ctx} horizon={0.8} />
@@ -401,11 +401,9 @@ export const SkyBack: React.FC<{ ctx: Ctx }> = ({ ctx }) => {
       <FarBirds ctx={ctx} y={VH * 0.4} n={5} />
       <Clouds ctx={ctx} depth={0.18} y={VH * 0.62} size={650} density={0.8} k="b" spread={80} />
       <Clouds ctx={ctx} depth={0.4} y={VH * 0.9} size={900} density={0.95} k="c" spread={60} />
-      {void pal}
     </>
   );
 };
 export const SkyFront: React.FC<{ ctx: Ctx }> = ({ ctx }) => (
   <Clouds ctx={ctx} depth={1.5} y={ctx.VH * 1.06} size={1100} density={0.85} k="d" spread={60} speed={40} />
 );
-export { Glow };

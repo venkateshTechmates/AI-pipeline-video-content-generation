@@ -26,8 +26,10 @@ render_jobs (status=queued, spec=RenderSpec)
 | `src/worker.ts` | Postgres job loop. |
 | `src/cli.ts` | Render a spec file without the DB. |
 | `src/lib/*` | Asset store (local/Supabase), loopback file server, render + loudnorm, logging. |
+| `src/scenes/*` | Procedural animation engine: the `scene` composition turns a text prompt into an animated illustrated shot (characters, parallax settings, effects, camera). See [`src/scenes/README.md`](src/scenes/README.md). |
+| `src/scene-cli.ts` | Batch renderer for `scene` clips (`npm run scene -- --jobs jobs.json`). |
 
-Input props for every composition are `{ spec: RenderSpec, aspect: "9:16" | "1:1" | "16:9" }`;
+Input props for every template composition are `{ spec: RenderSpec, aspect: "9:16" | "1:1" | "16:9" }`;
 the worker rewrites every asset path in `spec` to a URL before rendering. An
 unknown `spec.template` falls back to `default`.
 
@@ -39,6 +41,8 @@ npm run studio                                  # preview templates with sample 
 npm run render:local -- spec.json out/          # render without the DB → out/9x16.mp4 …, out/result.json
 DATABASE_URL=postgres://… ASSET_ROOT=/data npm run worker
 npm run typecheck
+npm run scene -- --jobs jobs.json               # animated scene clips from prompts (see src/scenes/README.md)
+npm run scene:check                             # print the parsed scene for sample prompts
 ```
 
 `npm run build` pre-bundles the Remotion project into `build/bundle`; the worker

@@ -1,7 +1,7 @@
 /** Sky, sun/moon, stars, clouds and procedural ridgelines shared by the outdoor settings. */
 import React from "react";
 import type { Ctx } from "../ctx";
-import { mix, rgba } from "../lib/color";
+import { mix } from "../lib/color";
 import { mod, rnd, rr, TAU } from "../lib/math";
 import { Glow, Layer, tiles, useSid, visibleX } from "../lib/svg";
 import { Lightning } from "../effects/atmos";
@@ -139,13 +139,12 @@ export const Clouds: React.FC<{ ctx: Ctx; depth: number; y: number; spread?: num
   return (
     <Layer ctx={ctx} depth={depth}>
       <g transform={`translate(${drift},0)`}>
-        {tiles(ctx, depth, spacing, spacing * 2).map(({ i, x }) => {
+        {tiles(ctx, depth, spacing, spacing * 2).map(({ i }) => {
           const ii = i - Math.floor(drift / spacing);
           if (rnd(seed, k, "has", ii) > density) return null;
           const cx = ii * spacing + rr(seed, -0.3, 0.3, k, "x", ii) * spacing;
           const cy = y + rr(seed, -1, 1, k, "y", ii) * spread;
           const w = size * rr(seed, 0.6, 1.4, k, "w", ii);
-          void x;
           return (
             <g key={ii} transform={`translate(${cx},${cy})`}>
               <CloudShape w={w} seed={seed} k={`${k}${ii}`} fill={fc} shade={sc} opacity={opacity} />
@@ -204,7 +203,6 @@ export const Pine: React.FC<{ h: number; fill: string; light?: string; snow?: bo
 /** Ground band with a gradient from `top` to `bottom`. */
 export const Ground: React.FC<{ ctx: Ctx; y: number; top: string; bottom: string; depth?: number; curve?: number }> = ({ ctx, y, top, bottom, depth = 1, curve = 0 }) => {
   const id = useSid();
-  const [a, b] = visibleX(ctx, depth, 400);
   const { VH } = ctx;
   return (
     <Layer ctx={ctx} depth={depth}>
@@ -215,12 +213,9 @@ export const Ground: React.FC<{ ctx: Ctx; y: number; top: string; bottom: string
         </linearGradient>
       </defs>
       <path d={ridgePath(ctx, depth, (x) => y + hillNoise(x, ctx.seed, "g" + depth) * curve, VH + 600, 40)} fill={`url(#${id})`} />
-      {void a}
-      {void b}
     </Layer>
   );
 };
 
 /** Fraction t over a repeating period (for looping ambient motion). */
 export const cyc = (t: number, period: number, phase = 0): number => mod(t / period + phase, 1);
-export { rgba };

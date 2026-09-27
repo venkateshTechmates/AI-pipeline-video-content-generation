@@ -1,7 +1,7 @@
 /** Interiors: hospital corridor, science lab, power station with a sparking generator. */
 import React from "react";
 import type { Ctx } from "../ctx";
-import { darken, lighten, mix } from "../lib/color";
+import { darken, lighten } from "../lib/color";
 import { mod, pts, rnd, rr, TAU, type Pt } from "../lib/math";
 import { Glow, Layer, useSid } from "../lib/svg";
 import { Arc, Sparks } from "../effects/energy";
@@ -94,7 +94,6 @@ export const HospitalBack: React.FC<{ ctx: Ctx }> = ({ ctx }) => {
   const stripe = ctx.lit("#3fa7a0");
   const door = ctx.lit("#5aa6c9");
   const out: React.ReactNode[] = [];
-  const Z = [0, 1];
   // surfaces
   out.push(poly([P(-1, 1, 0), P(1, 1, 0), P(1, 1, 1), P(-1, 1, 1)], floor, 1, "floor"));
   out.push(poly([P(-1, -1, 0), P(1, -1, 0), P(1, -1, 1), P(-1, -1, 1)], ceil, 1, "ceil"));
@@ -145,7 +144,6 @@ export const HospitalBack: React.FC<{ ctx: Ctx }> = ({ ctx }) => {
   }
   // vp glow
   out.push(<Glow key="vpg" cx={VW / 2} cy={VH * 0.44} r={VW * 0.5} color="#ffffff" opacity={0.35} />);
-  void Z;
   return <Layer ctx={ctx} depth={0.7} scrollFactor={0}>{out}</Layer>;
 };
 
@@ -334,4 +332,3 @@ export const PowerFront: React.FC<{ ctx: Ctx }> = ({ ctx }) => {
     </Layer>
   );
 };
-export { TAU, mix };

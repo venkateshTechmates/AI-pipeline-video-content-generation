@@ -266,4 +266,3 @@ export const SpaceBack: React.FC<{ ctx: Ctx }> = ({ ctx }) => {
   );
 };
 
-export { HorizonHaze };
