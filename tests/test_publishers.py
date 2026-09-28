@@ -118,3 +118,48 @@ def test_registry_falls_back_to_animation_without_video_keys(tmp_path):
     s2 = s.model_copy(update={"fal_key": "f", "animation_fallback": True})
     names = [v.name for v in build_providers(s2, MemoryRepo(), LocalStore(tmp_path)).video_chain(Tier.economy)]
     assert names[0] == "fal:kling-3.0" and names[-1] == "local:animation"
+
+
+async def test_openrouter_kling_video_job():
+    from clipforge.models import Aspect
+    from clipforge.providers.base import VideoRequest
+    from clipforge.providers.jobs import JobWaiter
+    from clipforge.providers.openrouter_video import OpenRouterVideo
+
+    calls: list[httpx.Request] = []
+    polls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if request.method == "POST":
+            return httpx.Response(200, json={"id": "vid_1", "status": "queued"})
+        polls["n"] += 1
+        if polls["n"] < 2:
+            return httpx.Response(200, json={"id": "vid_1", "status": "in_progress"})
+        return httpx.Response(200, json={"id": "vid_1", "status": "completed",
+                                         "output": {"video_url": "https://cdn.openrouter.ai/v.mp4"}})
+
+    gen = OpenRouterVideo("ork", "kling-v3.0-pro", waiter=JobWaiter(poll_interval=0.01, timeout=5),
+                          client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), poll_interval=0.01)
+    res = await gen.generate(VideoRequest(prompt="A golden retriever runs through a meadow at sunrise",
+                                          style="photorealistic, cinematic", duration=8.4,
+                                          aspect=Aspect.vertical, generate_audio=True))
+    body = json.loads(calls[0].content)
+    assert calls[0].url.path == "/api/v1/videos" and calls[0].headers["authorization"] == "Bearer ork"
+    assert body["model"] == "kwaivgi/kling-v3.0-pro" and body["duration"] == 9 and body["aspect_ratio"] == "9:16"
+    assert body["prompt"].startswith("photorealistic, cinematic. A golden retriever") and body["generate_audio"]
+    assert res.url == "https://cdn.openrouter.ai/v.mp4" and res.billable_seconds == 9
+
+
+def test_registry_uses_openrouter_kling(tmp_path):
+    from clipforge.config import Settings
+    from clipforge.db import MemoryRepo
+    from clipforge.models import Tier
+    from clipforge.providers.registry import build_providers
+    from clipforge.storage import LocalStore
+
+    s = Settings(_env_file=None, provider_mode="live", anthropic_api_key="a", openrouter_api_key="o",
+                 tts_provider="espeak")
+    p = build_providers(s, MemoryRepo(), LocalStore(tmp_path))
+    assert [v.name for v in p.video_chain(Tier.economy)] == ["openrouter:kling-v3.0-std"]
+    assert [v.name for v in p.video_chain(Tier.premium)] == ["openrouter:kling-v3.0-pro"]

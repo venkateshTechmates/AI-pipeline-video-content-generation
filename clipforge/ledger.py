@@ -29,6 +29,9 @@ PRICES: dict[str, float] = {
     "fal:seedance": 0.06,
     "fal:hailuo": 0.045,
     "replicate:kling-3.0": 0.09,
+    # OpenRouter list prices (with native audio: 0.168 / 0.126)
+    "openrouter:kling-v3.0-pro": 0.112,
+    "openrouter:kling-v3.0-std": 0.084,
     "vertex:veo-3.1": 0.40,
     "vertex:veo-3.1-fast": 0.15,
     "vertex:veo-3.1-lite": 0.05,

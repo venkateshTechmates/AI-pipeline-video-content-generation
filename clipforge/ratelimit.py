@@ -43,6 +43,7 @@ PROVIDER_LIMITS: dict[str, tuple[float, float]] = {
     "anthropic": (5.0, 10),
     "upload_post": (1.0, 3),
     "ayrshare": (1.0, 5),
+    "openrouter": (1.0, 5),
     "creatomate": (1.0, 3),
     "music": (2.0, 5),
 }

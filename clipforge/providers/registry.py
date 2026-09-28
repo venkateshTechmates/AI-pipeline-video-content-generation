@@ -69,6 +69,11 @@ def build_providers(settings: Settings, repo: Repo, store: AssetStore) -> Provid
 
     if settings.fal_key:
         economy += [FalVideo(settings.fal_key, m) for m in ("kling-3.0", "seedance", "hailuo")]
+    if settings.openrouter_api_key:  # Kling v3.0 via OpenRouter's video API
+        from .openrouter_video import OpenRouterVideo
+
+        economy.append(OpenRouterVideo(settings.openrouter_api_key, "kling-v3.0-std"))
+        premium.append(OpenRouterVideo(settings.openrouter_api_key, "kling-v3.0-pro"))
     if settings.replicate_api_token:
         economy.append(ReplicateVideo(settings.replicate_api_token))
     if has_veo:

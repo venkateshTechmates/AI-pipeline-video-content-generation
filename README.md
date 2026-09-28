@@ -47,6 +47,12 @@ docker compose up --build                                 # postgres + api + wor
 Set `PROVIDER_MODE=live`. The economy tier then uses Veo 3.1 Lite (~$0.05/s) and premium uses Veo 3.1
 (~$0.40/s). Add fal/ElevenLabs keys for Kling and ElevenLabs.
 
+**Kling v3.0 through OpenRouter:** set `OPENROUTER_API_KEY` and the video chains get Kling v3.0
+Standard (economy, ~$0.084/s) and Pro (premium, ~$0.112/s) through OpenRouter's async video API
+(`POST /api/v1/videos`, then poll). One key also covers the text models with
+`LLM_MODEL=openrouter:anthropic/claude-sonnet-4.5`. The host `openrouter.ai` must be allowed by your
+network.
+
 Default budgets are $25 per run and $250 per brand per day, which fits Veo 3.1 standard (the model
 behind Google Flow) at about $14 for a 35 s video. Lower them per brand in the UI or with
 `PATCH /brands/{id}` if you want the PRD's $3 economy target enforced.
